@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: biogreen
+      POSTGRES_PASSWORD: biogreen
+      POSTGRES_DB: biogreen
+    ports:
+      - "5432:5432"
+    volumes:
+      - biogreen_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  biogreen_postgres_data:

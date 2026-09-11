@@ -1,0 +1,1288 @@
+// BIOGREEN SYSTEM — schema completo (Fase 0)
+//
+// Convenções do projeto (ver docs/PLANO.md §2):
+// - Toda entidade operacional (cadastros e transações — não as tabelas de apoio/enum-like)
+//   tem `createdAt`/`updatedAt`/`deletedAt` (soft delete) e `createdById`/`updatedById`.
+// - `createdById`/`updatedById` são armazenados como Int simples (sem relation do Prisma)
+//   para não explodir o model Usuario com dezenas de back-relations de auditoria — quem
+//   precisar do nome do usuário faz join manual por id. Relations "de negócio" de verdade
+//   (vendedor responsável, técnico responsável, responsável por uma tarefa etc.) SÃO relations.
+// - `empresaId` aparece nas entidades "raiz" de cada módulo (Cliente, Produto, Fornecedor...);
+//   tabelas de detalhe/linha (itens de proposta, itens de pedido etc.) herdam o escopo do pai.
+// - Nomes de model/campo em camelCase, sem @@map — mesmo padrão do projeto IMETAL.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+}
+
+// ============================================================
+// 5.1 NÚCLEO
+// ============================================================
+
+model Empresa {
+  id           Int      @id @default(autoincrement())
+  razaoSocial  String
+  nomeFantasia String
+  cnpj         String   @unique
+  endereco     String?
+  cidade       String?
+  uf           String?
+  cep          String?
+  telefone     String?
+  email        String?
+  site         String?
+  logoUrl      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  unidades   Unidade[]
+  setores    Setor[]
+  usuarios   Usuario[]
+  clientes   Cliente[]
+  fornecedores Fornecedor[]
+  produtos   Produto[]
+}
+
+model Unidade {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nome      String
+  endereco  String?
+  principal Boolean  @default(false)
+  ativo     Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Setor {
+  id        Int      @id @default(autoincrement())
+  empresaId Int
+  empresa   Empresa  @relation(fields: [empresaId], references: [id])
+  nome      String
+  createdAt DateTime @default(now())
+
+  cargos Cargo[]
+
+  @@unique([empresaId, nome])
+}
+
+model Cargo {
+  id      Int    @id @default(autoincrement())
+  setorId Int
+  setor   Setor  @relation(fields: [setorId], references: [id])
+  nome    String
+
+  usuarios    Usuario[]
+  permissoes  Permissao[]
+
+  @@unique([setorId, nome])
+}
+
+/// Ação granular por recurso (ex.: "comercial.proposta", "financeiro.contaPagar").
+/// Um Cargo pode ter várias linhas, uma por recurso do sistema.
+model Permissao {
+  id         Int     @id @default(autoincrement())
+  cargoId    Int
+  cargo      Cargo   @relation(fields: [cargoId], references: [id], onDelete: Cascade)
+  recurso    String
+  podeVer    Boolean @default(false)
+  podeCriar  Boolean @default(false)
+  podeEditar Boolean @default(false)
+  podeAprovar Boolean @default(false)
+  podeExcluir Boolean @default(false)
+
+  @@unique([cargoId, recurso])
+}
+
+model Usuario {
+  id               Int       @id @default(autoincrement())
+  empresaId        Int
+  empresa          Empresa   @relation(fields: [empresaId], references: [id])
+  nome             String
+  email            String    @unique
+  username         String    @unique
+  passwordHash     String
+  cargoId          Int?
+  cargo            Cargo?    @relation(fields: [cargoId], references: [id])
+  /// Bypassa o RBAC granular — reservado para o bootstrap inicial e para a diretoria/TI.
+  superAdmin       Boolean   @default(false)
+  ativo            Boolean   @default(true)
+  twoFactorEnabled Boolean   @default(false)
+  twoFactorSecret  String?
+  ultimoLoginEm    DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  deletedAt        DateTime?
+
+  clientesVendedor Cliente[]        @relation("ClienteVendedor")
+  clientesTecnico  Cliente[]        @relation("ClienteTecnico")
+  oportunidades    Oportunidade[]
+  visitasTecnicas  VisitaTecnica[]
+  comissoes        Comissao[]
+  auditLogs        AuditLog[]
+  chatConversas    ChatConversa[]
+  tarefas          Tarefa[]
+  colaborador      Colaborador?
+}
+
+/// Trilha de auditoria — quem alterou o quê e quando, em qualquer entidade sensível.
+model AuditLog {
+  id           Int      @id @default(autoincrement())
+  usuarioId    Int
+  usuario      Usuario  @relation(fields: [usuarioId], references: [id])
+  entidade     String
+  entidadeId   Int
+  acao         String
+  dadosAntes   Json?
+  dadosDepois  Json?
+  createdAt    DateTime @default(now())
+
+  @@index([entidade, entidadeId])
+}
+
+// ============================================================
+// Cadastros mestres (núcleo, seção 5.1)
+// ============================================================
+
+enum Segmento {
+  PAPEL_CARTAO
+  CELULOSE
+  TRATAMENTO_AGUA
+}
+
+model UnidadeMedida {
+  id                Int             @id @default(autoincrement())
+  sigla             String          @unique
+  nome              String
+  unidadeBaseId     Int?
+  unidadeBase       UnidadeMedida?  @relation("ConversaoUnidade", fields: [unidadeBaseId], references: [id])
+  fatorConversaoBase Decimal?       @db.Decimal(18, 6)
+
+  unidadesDerivadas UnidadeMedida[] @relation("ConversaoUnidade")
+  materiasPrimas    MateriaPrima[]
+  embalagens        Embalagem[]
+  produtos          Produto[]
+}
+
+model Embalagem {
+  id              Int           @id @default(autoincrement())
+  nome            String
+  unidadeMedidaId Int
+  unidadeMedida   UnidadeMedida @relation(fields: [unidadeMedidaId], references: [id])
+  capacidade      Decimal       @db.Decimal(18, 3)
+  ativo           Boolean       @default(true)
+}
+
+model Cliente {
+  id                 Int       @id @default(autoincrement())
+  empresaId          Int
+  empresa            Empresa   @relation(fields: [empresaId], references: [id])
+  clienteMatrizId    Int?
+  clienteMatriz      Cliente?  @relation("MatrizFilial", fields: [clienteMatrizId], references: [id])
+  filiais            Cliente[] @relation("MatrizFilial")
+  razaoSocial        String
+  nomeFantasia       String?
+  cnpjCpf            String    @unique
+  segmento           Segmento
+  condicoesComerciais String?
+  vendedorId         Int?
+  vendedor           Usuario?  @relation("ClienteVendedor", fields: [vendedorId], references: [id])
+  tecnicoId          Int?
+  tecnico            Usuario?  @relation("ClienteTecnico", fields: [tecnicoId], references: [id])
+  ativo              Boolean   @default(true)
+  createdById        Int?
+  updatedById        Int?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  deletedAt          DateTime?
+
+  contatos         ClienteContato[]
+  tabelasPreco     TabelaPreco[]
+  oportunidades    Oportunidade[]
+  propostas        Proposta[]
+  pedidosVenda     PedidoVenda[]
+  contratos        ContratoFornecimento[]
+  visitasTecnicas  VisitaTecnica[]
+  testesIndustriais TesteIndustrial[]
+  contasReceber    ContaReceber[]
+  naoConformidades NaoConformidade[]
+  notasFiscais     NotaFiscal[]
+  produtosExclusivos Produto[]      @relation("ProdutoClienteExclusivo")
+  formulasCustomizadas Formula[]
+}
+
+model ClienteContato {
+  id        Int      @id @default(autoincrement())
+  clienteId Int
+  cliente   Cliente  @relation(fields: [clienteId], references: [id], onDelete: Cascade)
+  nome      String
+  cargo     String?
+  email     String?
+  telefone  String?
+  principal Boolean  @default(false)
+}
+
+model Fornecedor {
+  id          Int       @id @default(autoincrement())
+  empresaId   Int
+  empresa     Empresa   @relation(fields: [empresaId], references: [id])
+  razaoSocial String
+  nomeFantasia String?
+  cnpjCpf     String    @unique
+  pais        String    @default("Brasil")
+  contato     String?
+  email       String?
+  telefone    String?
+  ativo       Boolean   @default(true)
+  createdById Int?
+  updatedById Int?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  materiasPrimas     MateriaPrima[]
+  pedidosCompra      PedidoCompra[]
+  notasFiscaisEntrada NotaFiscalEntrada[]
+  contasPagar        ContaPagar[]
+  inspecoesRecebimento InspecaoRecebimento[]
+}
+
+model Transportadora {
+  id       Int    @id @default(autoincrement())
+  nome     String
+  cnpj     String? @unique
+  contato  String?
+  telefone String?
+  ativo    Boolean @default(true)
+
+  expedicoes Expedicao[]
+}
+
+model MateriaPrima {
+  id              Int           @id @default(autoincrement())
+  codigo          String        @unique
+  nome            String
+  unidadeMedidaId Int
+  unidadeMedida   UnidadeMedida @relation(fields: [unidadeMedidaId], references: [id])
+  fornecedorPadraoId Int?
+  fornecedorPadrao  Fornecedor? @relation(fields: [fornecedorPadraoId], references: [id])
+  custoMedio      Decimal?      @db.Decimal(18, 4)
+  estoqueMinimo   Decimal?      @db.Decimal(18, 3)
+  ativo           Boolean       @default(true)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
+
+  formulaItens      FormulaItem[]
+  estoqueMovimentos EstoqueMovimento[]
+  pedidoCompraItens PedidoCompraItem[]
+  inspecoesRecebimento InspecaoRecebimento[]
+}
+
+enum FormaProduto {
+  PO
+  EMULSAO
+  LIQUIDO
+  GEL
+  OUTRO
+}
+
+enum OrigemProduto {
+  FABRICADO
+  REVENDIDO
+  MISTURA_CUSTOMIZADA
+}
+
+model Produto {
+  id                 Int           @id @default(autoincrement())
+  empresaId          Int
+  empresa            Empresa       @relation(fields: [empresaId], references: [id])
+  codigoInterno      String        @unique
+  nomeComercial      String
+  familia            String?
+  forma              FormaProduto  @default(LIQUIDO)
+  densidade          Decimal?      @db.Decimal(10, 4)
+  concentracao       Decimal?      @db.Decimal(6, 3)
+  ncm                String?
+  cest               String?
+  classificacaoOnu   String?
+  fispqUrl           String?
+  fispqValidade      DateTime?
+  fichaTecnicaUrl    String?
+  produtoControlado  Boolean       @default(false)
+  numeroLicenca      String?
+  licencaVencimento  DateTime?
+  shelfLifeDias      Int?
+  condicoesArmazenagem String?
+  origem             OrigemProduto @default(FABRICADO)
+  segmento           Segmento
+  unidadeMedidaId    Int
+  unidadeMedida      UnidadeMedida @relation(fields: [unidadeMedidaId], references: [id])
+  clienteExclusivoId Int?
+  clienteExclusivo   Cliente?      @relation("ProdutoClienteExclusivo", fields: [clienteExclusivoId], references: [id])
+  precoBase          Decimal?      @db.Decimal(18, 4)
+  ativo              Boolean       @default(true)
+  createdById        Int?
+  updatedById        Int?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+  deletedAt          DateTime?
+
+  formulas          Formula[]
+  especificacoes    Especificacao[]
+  tabelasPreco      TabelaPreco[]
+  propostaItens     PropostaItem[]
+  pedidoVendaItens  PedidoVendaItem[]
+  lotes             Lote[]
+  estoqueMovimentos EstoqueMovimento[]
+  contratos         ContratoFornecimento[]
+}
+
+model TabelaPreco {
+  id              Int       @id @default(autoincrement())
+  clienteId       Int?
+  cliente         Cliente?  @relation(fields: [clienteId], references: [id])
+  segmento        Segmento?
+  produtoId       Int
+  produto         Produto   @relation(fields: [produtoId], references: [id])
+  preco           Decimal   @db.Decimal(18, 4)
+  vigenciaInicio  DateTime
+  vigenciaFim     DateTime?
+}
+
+// ============================================================
+// 5.2 COMERCIAL / CRM
+// ============================================================
+
+enum EtapaOportunidade {
+  LEAD
+  VISITA_TECNICA
+  TESTE_INDUSTRIAL
+  PROPOSTA
+  NEGOCIACAO
+  GANHO
+  PERDIDO
+}
+
+model Oportunidade {
+  id             Int               @id @default(autoincrement())
+  clienteId      Int
+  cliente        Cliente           @relation(fields: [clienteId], references: [id])
+  vendedorId     Int
+  vendedor       Usuario           @relation(fields: [vendedorId], references: [id])
+  etapa          EtapaOportunidade @default(LEAD)
+  motivoPerda    String?
+  valorEstimado  Decimal?          @db.Decimal(18, 2)
+  dataAbertura   DateTime          @default(now())
+  dataFechamento DateTime?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+
+  propostas Proposta[]
+  testesIndustriais TesteIndustrial[]
+}
+
+enum StatusProposta {
+  RASCUNHO
+  AGUARDANDO_APROVACAO
+  APROVADA
+  ENVIADA
+  ACEITA
+  RECUSADA
+}
+
+model Proposta {
+  id             Int            @id @default(autoincrement())
+  oportunidadeId Int?
+  oportunidade   Oportunidade?  @relation(fields: [oportunidadeId], references: [id])
+  clienteId      Int
+  cliente        Cliente        @relation(fields: [clienteId], references: [id])
+  numero         String         @unique
+  versao         Int            @default(1)
+  status         StatusProposta @default(RASCUNHO)
+  validadeAte    DateTime?
+  pdfUrl         String?
+  aprovadoPorId  Int?
+  createdById    Int?
+  updatedById    Int?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+  deletedAt      DateTime?
+
+  itens        PropostaItem[]
+  pedidoVenda  PedidoVenda?
+}
+
+model PropostaItem {
+  id             Int      @id @default(autoincrement())
+  propostaId     Int
+  proposta       Proposta @relation(fields: [propostaId], references: [id], onDelete: Cascade)
+  produtoId      Int
+  produto        Produto  @relation(fields: [produtoId], references: [id])
+  quantidade     Decimal  @db.Decimal(18, 3)
+  precoUnitario  Decimal  @db.Decimal(18, 4)
+  margemPercentual Decimal? @db.Decimal(6, 3)
+}
+
+enum StatusPedidoVenda {
+  PENDENTE
+  APROVADO
+  EM_PRODUCAO
+  FATURADO
+  EXPEDIDO
+  CANCELADO
+}
+
+model PedidoVenda {
+  id               Int               @id @default(autoincrement())
+  propostaId       Int?              @unique
+  proposta         Proposta?         @relation(fields: [propostaId], references: [id])
+  clienteId        Int
+  cliente          Cliente           @relation(fields: [clienteId], references: [id])
+  numero           String            @unique
+  status           StatusPedidoVenda @default(PENDENTE)
+  condicaoPagamento String?
+  freteTipo        String?
+  dataPrometida    DateTime?
+  createdById      Int?
+  updatedById      Int?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+
+  itens          PedidoVendaItem[]
+  ordensProducao OrdemProducao[]
+  contasReceber  ContaReceber[]
+  notasFiscais   NotaFiscal[]
+  expedicao      Expedicao?
+  comissoes      Comissao[]
+}
+
+model PedidoVendaItem {
+  id            Int         @id @default(autoincrement())
+  pedidoVendaId Int
+  pedidoVenda   PedidoVenda @relation(fields: [pedidoVendaId], references: [id], onDelete: Cascade)
+  produtoId     Int
+  produto       Produto     @relation(fields: [produtoId], references: [id])
+  quantidade    Decimal     @db.Decimal(18, 3)
+  precoUnitario Decimal     @db.Decimal(18, 4)
+  loteId        Int?
+  lote          Lote?       @relation(fields: [loteId], references: [id])
+
+  ordensProducao OrdemProducao[]
+}
+
+model ContratoFornecimento {
+  id                    Int      @id @default(autoincrement())
+  clienteId             Int
+  cliente               Cliente  @relation(fields: [clienteId], references: [id])
+  produtoId             Int
+  produto               Produto  @relation(fields: [produtoId], references: [id])
+  consumoMensalPrevisto Decimal  @db.Decimal(18, 3)
+  alertaReposicaoDias   Int      @default(7)
+  ativo                 Boolean  @default(true)
+}
+
+enum BaseComissao {
+  FATURADO
+  RECEBIDO
+}
+
+enum StatusComissao {
+  PENDENTE
+  PAGA
+}
+
+model Comissao {
+  id            Int            @id @default(autoincrement())
+  vendedorId    Int
+  vendedor      Usuario        @relation(fields: [vendedorId], references: [id])
+  pedidoVendaId Int
+  pedidoVenda   PedidoVenda    @relation(fields: [pedidoVendaId], references: [id])
+  percentual    Decimal        @db.Decimal(6, 3)
+  valor         Decimal        @db.Decimal(18, 2)
+  baseCalculo   BaseComissao   @default(FATURADO)
+  status        StatusComissao @default(PENDENTE)
+  createdAt     DateTime       @default(now())
+}
+
+model MetaComercial {
+  id         Int       @id @default(autoincrement())
+  vendedorId Int?
+  segmento   Segmento?
+  periodo    String
+  valorMeta  Decimal   @db.Decimal(18, 2)
+}
+
+// ============================================================
+// 5.3 ASSISTÊNCIA TÉCNICA
+// ============================================================
+
+enum StatusVisita {
+  AGENDADA
+  REALIZADA
+  CANCELADA
+}
+
+model VisitaTecnica {
+  id            Int          @id @default(autoincrement())
+  clienteId     Int
+  cliente       Cliente      @relation(fields: [clienteId], references: [id])
+  tecnicoId     Int
+  tecnico       Usuario      @relation(fields: [tecnicoId], references: [id])
+  dataAgendada  DateTime
+  status        StatusVisita @default(AGENDADA)
+  roteiro       String?
+  checkinLat    Decimal?     @db.Decimal(10, 7)
+  checkinLng    Decimal?     @db.Decimal(10, 7)
+  checkinFotoUrl String?
+  createdAt     DateTime     @default(now())
+
+  relatorio RelatorioVisita?
+}
+
+model RelatorioVisita {
+  id                Int           @id @default(autoincrement())
+  visitaTecnicaId   Int           @unique
+  visitaTecnica     VisitaTecnica @relation(fields: [visitaTecnicaId], references: [id])
+  parametrosMedidos Json
+  produtosAplicados Json
+  recomendacoes     String?
+  proximaAcao       String?
+  pdfUrl            String?
+  createdAt         DateTime      @default(now())
+}
+
+enum DecisaoTeste {
+  PENDENTE
+  APROVADO
+  REPROVADO
+}
+
+model TesteIndustrial {
+  id             Int           @id @default(autoincrement())
+  clienteId      Int
+  cliente        Cliente       @relation(fields: [clienteId], references: [id])
+  oportunidadeId Int?
+  oportunidade   Oportunidade? @relation(fields: [oportunidadeId], references: [id])
+  planejamento   String?
+  resultado      String?
+  decisao        DecisaoTeste  @default(PENDENTE)
+  dataPlanejada  DateTime?
+  dataResultado  DateTime?
+}
+
+enum AplicacaoConhecimento {
+  PAPEL
+  CELULOSE
+  AGUA
+}
+
+model ArtigoConhecimento {
+  id         Int                   @id @default(autoincrement())
+  aplicacao  AplicacaoConhecimento
+  titulo     String
+  conteudo   String
+  createdAt  DateTime              @default(now())
+}
+
+// ============================================================
+// 5.4 PRODUÇÃO (PCP)
+// ============================================================
+
+model Formula {
+  id           Int      @id @default(autoincrement())
+  produtoId    Int
+  produto      Produto  @relation(fields: [produtoId], references: [id])
+  versao       Int      @default(1)
+  rendimento   Decimal? @db.Decimal(18, 3)
+  ordemAdicao  Json?
+  tempoMinutos Int?
+  temperatura  Decimal? @db.Decimal(6, 2)
+  epi          String?
+  instrucoes   String?
+  clienteId    Int?
+  cliente      Cliente? @relation(fields: [clienteId], references: [id])
+  ativa        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  itens          FormulaItem[]
+  ordensProducao OrdemProducao[]
+}
+
+model FormulaItem {
+  id             Int          @id @default(autoincrement())
+  formulaId      Int
+  formula        Formula      @relation(fields: [formulaId], references: [id], onDelete: Cascade)
+  materiaPrimaId Int
+  materiaPrima   MateriaPrima @relation(fields: [materiaPrimaId], references: [id])
+  quantidade     Decimal      @db.Decimal(18, 4)
+  ordem          Int          @default(0)
+}
+
+enum TipoEquipamento {
+  REATOR
+  MISTURADOR
+  OUTRO
+}
+
+model Equipamento {
+  id                Int             @id @default(autoincrement())
+  nome              String
+  tipo              TipoEquipamento
+  capacidade        Decimal?        @db.Decimal(18, 3)
+  proximaManutencao DateTime?
+  ativo             Boolean         @default(true)
+
+  ordensProducao OrdemProducao[]
+  manutencoes    ManutencaoEquipamento[]
+}
+
+model ManutencaoEquipamento {
+  id             Int         @id @default(autoincrement())
+  equipamentoId  Int
+  equipamento    Equipamento @relation(fields: [equipamentoId], references: [id])
+  tipo           String
+  dataRealizada  DateTime?
+  dataProxima    DateTime?
+  observacoes    String?
+}
+
+enum StatusOrdemProducao {
+  PLANEJADA
+  EM_PRODUCAO
+  CONTROLE_QUALIDADE
+  APROVADA
+  REPROVADA
+  CONCLUIDA
+}
+
+model OrdemProducao {
+  id                  Int                 @id @default(autoincrement())
+  numero              String              @unique
+  pedidoVendaId       Int?
+  pedidoVenda         PedidoVenda?        @relation(fields: [pedidoVendaId], references: [id])
+  pedidoVendaItemId   Int?
+  pedidoVendaItem     PedidoVendaItem?    @relation(fields: [pedidoVendaItemId], references: [id])
+  formulaId           Int
+  formula             Formula             @relation(fields: [formulaId], references: [id])
+  equipamentoId       Int?
+  equipamento         Equipamento?        @relation(fields: [equipamentoId], references: [id])
+  status              StatusOrdemProducao @default(PLANEJADA)
+  quantidadePlanejada Decimal             @db.Decimal(18, 3)
+  quantidadeReal      Decimal?            @db.Decimal(18, 3)
+  dataInicio          DateTime?
+  dataFim             DateTime?
+  createdById         Int?
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  lotes Lote[]
+}
+
+model Lote {
+  id               Int       @id @default(autoincrement())
+  numeroLote       String    @unique
+  produtoId        Int
+  produto          Produto   @relation(fields: [produtoId], references: [id])
+  ordemProducaoId  Int?
+  ordemProducao    OrdemProducao? @relation(fields: [ordemProducaoId], references: [id])
+  quantidade       Decimal   @db.Decimal(18, 3)
+  dataFabricacao   DateTime?
+  dataValidade     DateTime?
+  createdAt        DateTime  @default(now())
+
+  pedidoVendaItens  PedidoVendaItem[]
+  analises          AnaliseLote[]
+  coaDocumentos     CoaDocumento[]
+  custo             CustoLote?
+  estoqueMovimentos EstoqueMovimento[]
+  naoConformidades  NaoConformidade[]
+  /// Matérias-primas (por lote de fornecedor) consumidas para produzir este lote — rastreio "para trás".
+  consumos          LoteConsumo[] @relation("LoteProduzido")
+  /// Lotes que usaram este lote de matéria-prima como insumo — rastreio "para frente".
+  usadoEm           LoteConsumo[] @relation("LoteMateriaPrima")
+}
+
+/// Join de rastreabilidade: qual lote de matéria-prima (de fornecedor) foi consumido em qual lote produzido.
+model LoteConsumo {
+  id                Int     @id @default(autoincrement())
+  loteProduzidoId   Int
+  loteProduzido     Lote    @relation("LoteProduzido", fields: [loteProduzidoId], references: [id])
+  loteMateriaPrimaId Int
+  loteMateriaPrima  Lote    @relation("LoteMateriaPrima", fields: [loteMateriaPrimaId], references: [id])
+  quantidade        Decimal @db.Decimal(18, 4)
+}
+
+model CustoLote {
+  id                    Int     @id @default(autoincrement())
+  loteId                Int     @unique
+  lote                  Lote    @relation(fields: [loteId], references: [id])
+  custoMateriaPrima     Decimal @db.Decimal(18, 2)
+  custoEmbalagem        Decimal @db.Decimal(18, 2)
+  custoMaoObra          Decimal @db.Decimal(18, 2)
+  custoEnergiaRateada   Decimal @db.Decimal(18, 2)
+  custoTotal            Decimal @db.Decimal(18, 2)
+}
+
+// ============================================================
+// 5.5 QUALIDADE / LABORATÓRIO
+// ============================================================
+
+model Especificacao {
+  id        Int     @id @default(autoincrement())
+  produtoId Int
+  produto   Produto @relation(fields: [produtoId], references: [id])
+  parametro String
+  minimo    Decimal? @db.Decimal(18, 4)
+  maximo    Decimal? @db.Decimal(18, 4)
+  metodo    String?
+
+  analises AnaliseLote[]
+}
+
+model AnaliseLote {
+  id              Int           @id @default(autoincrement())
+  loteId          Int
+  lote            Lote          @relation(fields: [loteId], references: [id])
+  especificacaoId Int
+  especificacao   Especificacao @relation(fields: [especificacaoId], references: [id])
+  valorMedido     Decimal       @db.Decimal(18, 4)
+  aprovado        Boolean
+  analistaId      Int?
+  dataAnalise     DateTime      @default(now())
+}
+
+model CoaDocumento {
+  id        Int      @id @default(autoincrement())
+  loteId    Int
+  lote      Lote     @relation(fields: [loteId], references: [id])
+  pdfUrl    String
+  geradoEm  DateTime @default(now())
+}
+
+enum StatusInspecao {
+  APROVADO
+  BLOQUEADO
+  PENDENTE
+}
+
+model InspecaoRecebimento {
+  id               Int            @id @default(autoincrement())
+  materiaPrimaId   Int
+  materiaPrima     MateriaPrima   @relation(fields: [materiaPrimaId], references: [id])
+  fornecedorId     Int
+  fornecedor       Fornecedor     @relation(fields: [fornecedorId], references: [id])
+  numeroLoteFornecedor String?
+  status           StatusInspecao @default(PENDENTE)
+  observacoes      String?
+  createdAt        DateTime       @default(now())
+}
+
+enum OrigemNaoConformidade {
+  CLIENTE
+  INTERNA
+}
+
+enum StatusNaoConformidade {
+  ABERTA
+  EM_ANALISE
+  ACAO_CORRETIVA
+  FECHADA
+}
+
+model NaoConformidade {
+  id          Int                   @id @default(autoincrement())
+  origem      OrigemNaoConformidade
+  descricao   String
+  loteId      Int?
+  lote        Lote?                 @relation(fields: [loteId], references: [id])
+  clienteId   Int?
+  cliente     Cliente?              @relation(fields: [clienteId], references: [id])
+  status      StatusNaoConformidade @default(ABERTA)
+  acao8D      Json?
+  createdAt   DateTime              @default(now())
+  updatedAt   DateTime              @updatedAt
+}
+
+// ============================================================
+// 5.6 ESTOQUE E COMPRAS
+// ============================================================
+
+enum TipoLocalEstoque {
+  ALMOXARIFADO_MP
+  PRODUCAO
+  PRODUTO_ACABADO
+  QUARENTENA
+  CLIENTE_CONSIGNACAO
+}
+
+model LocalEstoque {
+  id    Int              @id @default(autoincrement())
+  nome  String
+  tipo  TipoLocalEstoque
+  ativo Boolean          @default(true)
+
+  movimentos EstoqueMovimento[]
+  inventarios InventarioCiclico[]
+}
+
+enum TipoMovimentoEstoque {
+  ENTRADA
+  SAIDA
+  TRANSFERENCIA
+  PERDA
+  AJUSTE
+}
+
+model EstoqueMovimento {
+  id             Int                  @id @default(autoincrement())
+  localEstoqueId Int
+  localEstoque   LocalEstoque         @relation(fields: [localEstoqueId], references: [id])
+  produtoId      Int?
+  produto        Produto?             @relation(fields: [produtoId], references: [id])
+  materiaPrimaId Int?
+  materiaPrima   MateriaPrima?        @relation(fields: [materiaPrimaId], references: [id])
+  loteId         Int?
+  lote           Lote?                @relation(fields: [loteId], references: [id])
+  tipo           TipoMovimentoEstoque
+  quantidade     Decimal              @db.Decimal(18, 3)
+  motivo         String?
+  referenciaTipo String?
+  referenciaId   Int?
+  createdById    Int?
+  dataMovimento  DateTime             @default(now())
+}
+
+model InventarioCiclico {
+  id             Int          @id @default(autoincrement())
+  localEstoqueId Int
+  localEstoque   LocalEstoque @relation(fields: [localEstoqueId], references: [id])
+  dataInicio     DateTime     @default(now())
+  dataFim        DateTime?
+  status         String       @default("EM_ANDAMENTO")
+}
+
+enum StatusPedidoCompra {
+  RASCUNHO
+  ENVIADO
+  CONFIRMADO
+  RECEBIDO
+  CANCELADO
+}
+
+model PedidoCompra {
+  id                     Int                @id @default(autoincrement())
+  fornecedorId           Int
+  fornecedor             Fornecedor         @relation(fields: [fornecedorId], references: [id])
+  numero                 String             @unique
+  status                 StatusPedidoCompra @default(RASCUNHO)
+  moeda                  String             @default("BRL")
+  cambio                 Decimal?           @db.Decimal(12, 6)
+  custosNacionalizacao   Decimal?           @db.Decimal(18, 2)
+  createdById            Int?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  itens             PedidoCompraItem[]
+  contasPagar       ContaPagar[]
+  notasFiscaisEntrada NotaFiscalEntrada[]
+}
+
+model PedidoCompraItem {
+  id             Int          @id @default(autoincrement())
+  pedidoCompraId Int
+  pedidoCompra   PedidoCompra @relation(fields: [pedidoCompraId], references: [id], onDelete: Cascade)
+  materiaPrimaId Int
+  materiaPrima   MateriaPrima @relation(fields: [materiaPrimaId], references: [id])
+  quantidade     Decimal      @db.Decimal(18, 3)
+  precoUnitario  Decimal      @db.Decimal(18, 4)
+}
+
+// ============================================================
+// 5.7 FISCAL
+// ============================================================
+
+enum TipoNotaFiscal {
+  VENDA
+  REMESSA
+  DEVOLUCAO
+  COMPLEMENTAR
+  TRANSFERENCIA
+}
+
+enum StatusNotaFiscal {
+  RASCUNHO
+  AUTORIZADA
+  CANCELADA
+  INUTILIZADA
+}
+
+model NotaFiscal {
+  id            Int              @id @default(autoincrement())
+  tipo          TipoNotaFiscal
+  pedidoVendaId Int?
+  pedidoVenda   PedidoVenda?     @relation(fields: [pedidoVendaId], references: [id])
+  clienteId     Int
+  cliente       Cliente          @relation(fields: [clienteId], references: [id])
+  loteId        Int?
+  numero        String
+  serie         String
+  chaveAcesso   String?          @unique
+  xmlUrl        String?
+  danfeUrl      String?
+  status        StatusNotaFiscal @default(RASCUNHO)
+  valorTotal    Decimal          @db.Decimal(18, 2)
+  impostos      Json?
+  emitidaEm     DateTime?
+  createdAt     DateTime         @default(now())
+
+  @@unique([numero, serie])
+}
+
+model NotaFiscalEntrada {
+  id             Int          @id @default(autoincrement())
+  pedidoCompraId Int?
+  pedidoCompra   PedidoCompra? @relation(fields: [pedidoCompraId], references: [id])
+  fornecedorId   Int
+  fornecedor     Fornecedor   @relation(fields: [fornecedorId], references: [id])
+  numero         String
+  chaveAcesso    String?      @unique
+  xmlUrl         String?
+  manifestacao   String       @default("PENDENTE")
+  createdAt      DateTime     @default(now())
+}
+
+model ConfiguracaoFiscal {
+  id        Int      @id @default(autoincrement())
+  ncm       String
+  uf        String
+  regime    String
+  aliquota  Decimal  @db.Decimal(6, 3)
+  updatedAt DateTime @updatedAt
+
+  @@unique([ncm, uf, regime])
+}
+
+// ============================================================
+// 5.8 FINANCEIRO
+// ============================================================
+
+model ContaBancaria {
+  id           Int     @id @default(autoincrement())
+  nome         String
+  banco        String?
+  agencia      String?
+  conta        String?
+  saldoInicial Decimal @default(0) @db.Decimal(18, 2)
+  ativo        Boolean @default(true)
+}
+
+model CentroCusto {
+  id      Int    @id @default(autoincrement())
+  nome    String
+  setorId Int?
+
+  planosContas PlanoContas[]
+}
+
+enum TipoPlanoContas {
+  RECEITA
+  DESPESA
+}
+
+model PlanoContas {
+  id            Int             @id @default(autoincrement())
+  codigo        String          @unique
+  nome          String
+  tipo          TipoPlanoContas
+  centroCustoId Int?
+  centroCusto   CentroCusto?    @relation(fields: [centroCustoId], references: [id])
+
+  contasReceber ContaReceber[]
+  contasPagar   ContaPagar[]
+}
+
+enum StatusTitulo {
+  ABERTO
+  PARCIAL
+  PAGO
+  VENCIDO
+  CANCELADO
+}
+
+model ContaReceber {
+  id            Int          @id @default(autoincrement())
+  clienteId     Int
+  cliente       Cliente      @relation(fields: [clienteId], references: [id])
+  pedidoVendaId Int?
+  pedidoVenda   PedidoVenda? @relation(fields: [pedidoVendaId], references: [id])
+  notaFiscalId  Int?
+  planoContasId Int?
+  planoContas   PlanoContas? @relation(fields: [planoContasId], references: [id])
+  valor         Decimal      @db.Decimal(18, 2)
+  valorPago     Decimal      @default(0) @db.Decimal(18, 2)
+  vencimento    DateTime
+  status        StatusTitulo @default(ABERTO)
+  dataBaixa     DateTime?
+  createdAt     DateTime     @default(now())
+}
+
+model ContaPagar {
+  id             Int           @id @default(autoincrement())
+  fornecedorId   Int
+  fornecedor     Fornecedor    @relation(fields: [fornecedorId], references: [id])
+  pedidoCompraId Int?
+  pedidoCompra   PedidoCompra? @relation(fields: [pedidoCompraId], references: [id])
+  planoContasId  Int?
+  planoContas    PlanoContas?  @relation(fields: [planoContasId], references: [id])
+  valor          Decimal       @db.Decimal(18, 2)
+  valorPago      Decimal       @default(0) @db.Decimal(18, 2)
+  vencimento     DateTime
+  status         StatusTitulo  @default(ABERTO)
+  dataBaixa      DateTime?
+  createdAt      DateTime      @default(now())
+
+  aprovacoes AprovacaoAlcada[]
+}
+
+model ConciliacaoBancaria {
+  id              Int      @id @default(autoincrement())
+  contaBancariaId Int
+  ofxImportadoEm  DateTime @default(now())
+  itens           Json
+}
+
+enum TipoAlcada {
+  PAGAMENTO
+  PROPOSTA
+  COMPRA
+}
+
+enum StatusAlcada {
+  PENDENTE
+  APROVADO
+  REJEITADO
+}
+
+model AprovacaoAlcada {
+  id            Int          @id @default(autoincrement())
+  tipo          TipoAlcada
+  contaPagarId  Int?
+  contaPagar    ContaPagar?  @relation(fields: [contaPagarId], references: [id])
+  referenciaId  Int
+  valorLimite   Decimal      @db.Decimal(18, 2)
+  aprovadorId   Int?
+  status        StatusAlcada @default(PENDENTE)
+  aprovadoEm    DateTime?
+  createdAt     DateTime     @default(now())
+}
+
+// ============================================================
+// 5.9 PRESTAÇÃO DE CONTAS / GOVERNANÇA
+// ============================================================
+
+enum StatusFechamento {
+  ABERTO
+  FECHADO
+}
+
+model FechamentoMensal {
+  id          Int              @id @default(autoincrement())
+  periodo     String
+  setor       String
+  status      StatusFechamento @default(ABERTO)
+  fechadoPorId Int?
+  fechadoEm   DateTime?
+
+  @@unique([periodo, setor])
+}
+
+model Kpi {
+  id        Int      @id @default(autoincrement())
+  setor     String
+  nome      String
+  meta      Decimal  @db.Decimal(18, 3)
+  realizado Decimal  @db.Decimal(18, 3)
+  periodo   String
+  semaforo  String   @default("VERDE")
+}
+
+// ============================================================
+// 5.10 LOGÍSTICA / EXPEDIÇÃO
+// ============================================================
+
+enum StatusExpedicao {
+  SEPARACAO
+  CONFERIDO
+  EXPEDIDO
+  ENTREGUE
+}
+
+model Expedicao {
+  id               Int             @id @default(autoincrement())
+  pedidoVendaId    Int             @unique
+  pedidoVenda      PedidoVenda     @relation(fields: [pedidoVendaId], references: [id])
+  status           StatusExpedicao @default(SEPARACAO)
+  transportadoraId Int?
+  transportadora   Transportadora? @relation(fields: [transportadoraId], references: [id])
+  romaneioUrl      String?
+  dataAgendamento  DateTime?
+  comprovanteUrl   String?
+  assinaturaUrl    String?
+  createdAt        DateTime        @default(now())
+
+  volumes ExpedicaoVolume[]
+}
+
+model ExpedicaoVolume {
+  id              Int       @id @default(autoincrement())
+  expedicaoId     Int
+  expedicao       Expedicao @relation(fields: [expedicaoId], references: [id], onDelete: Cascade)
+  etiquetaCodigo  String    @unique
+  classificacaoOnu String?
+  pesoKg          Decimal?  @db.Decimal(10, 3)
+}
+
+// ============================================================
+// 5.11 PESSOAS E TAREFAS
+// ============================================================
+
+model Colaborador {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int?     @unique
+  usuario   Usuario? @relation(fields: [usuarioId], references: [id])
+  nome      String
+  setorId   Int?
+  cargoTexto String?
+  escala    String?
+  epis      Json?
+  ativo     Boolean  @default(true)
+
+  treinamentos Treinamento[]
+}
+
+model Treinamento {
+  id             Int          @id @default(autoincrement())
+  colaboradorId  Int
+  colaborador    Colaborador  @relation(fields: [colaboradorId], references: [id])
+  nome           String
+  dataRealizado  DateTime?
+  dataValidade   DateTime?
+  certificadoUrl String?
+}
+
+enum StatusTarefa {
+  A_FAZER
+  EM_ANDAMENTO
+  CONCLUIDA
+  CANCELADA
+}
+
+/// `entidadeTipo`/`entidadeId` formam um vínculo polimórfico leve (ex.: "PedidoVenda"/123),
+/// para permitir anexar tarefas a qualquer registro do sistema sem uma FK por módulo.
+model Tarefa {
+  id             Int          @id @default(autoincrement())
+  titulo         String
+  descricao      String?
+  responsavelId  Int
+  responsavel    Usuario      @relation(fields: [responsavelId], references: [id])
+  status         StatusTarefa @default(A_FAZER)
+  prazo          DateTime?
+  entidadeTipo   String?
+  entidadeId     Int?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+// ============================================================
+// 5.12 O "CÉREBRO" (IA)
+// ============================================================
+
+model ChatConversa {
+  id        Int      @id @default(autoincrement())
+  usuarioId Int
+  usuario   Usuario  @relation(fields: [usuarioId], references: [id])
+  titulo    String?
+  createdAt DateTime @default(now())
+
+  mensagens ChatMensagem[]
+}
+
+enum RoleChat {
+  USER
+  ASSISTANT
+}
+
+model ChatMensagem {
+  id           Int          @id @default(autoincrement())
+  conversaId   Int
+  conversa     ChatConversa @relation(fields: [conversaId], references: [id], onDelete: Cascade)
+  role         RoleChat
+  conteudo     String
+  toolCalls    Json?
+  createdAt    DateTime     @default(now())
+}
+
+enum StatusSugestao {
+  NOVA
+  VISTA
+  DESCARTADA
+}
+
+model SugestaoProativa {
+  id           Int             @id @default(autoincrement())
+  tipo         String
+  descricao    String
+  entidadeTipo String?
+  entidadeId   Int?
+  status       StatusSugestao  @default(NOVA)
+  createdAt    DateTime        @default(now())
+}
+
+// ============================================================
+// Apoio: anexos genéricos e fila de jobs assíncronos
+// ============================================================
+
+/// Anexo genérico (comprovantes, fotos de expedição/visita, documentos avulsos) vinculado
+/// por `entidadeTipo`/`entidadeId` a qualquer registro — os documentos "oficiais" de cada
+/// entidade (FISPQ, COA, DANFE...) têm campo de URL dedicado no próprio model.
+model Anexo {
+  id           Int      @id @default(autoincrement())
+  entidadeTipo String
+  entidadeId   Int
+  nome         String
+  url          String
+  mimeType     String?
+  tamanho      Int?
+  createdById  Int?
+  createdAt    DateTime @default(now())
+
+  @@index([entidadeTipo, entidadeId])
+}
+
+enum StatusJob {
+  PENDENTE
+  PROCESSANDO
+  CONCLUIDO
+  FALHOU
+}
+
+/// Fila de jobs assíncronos processada por Vercel Cron (ver docs/PLANO.md §2 — sem Redis dedicado).
+model Job {
+  id          Int       @id @default(autoincrement())
+  tipo        String
+  payload     Json
+  status      StatusJob @default(PENDENTE)
+  tentativas  Int       @default(0)
+  erro        String?
+  createdAt   DateTime  @default(now())
+  processadoEm DateTime?
+}

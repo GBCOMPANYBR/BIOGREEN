@@ -1,0 +1,10 @@
+node_modules
+.next
+*.tsbuildinfo
+.env
+.env*.local
+.vercel
+storage/attachments
+*.xlsx
+*.log
+.DS_Store
