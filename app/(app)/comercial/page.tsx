@@ -1,6 +1,7 @@
 import { requireModuleAccess } from "@/lib/nav-visibility";
 import { prisma } from "@/lib/prisma";
 import { criarPedido, aprovarPedido } from "@/lib/actions";
+import { verificarDisponibilidade } from "@/lib/estoque";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,22 @@ export default async function ComercialPage() {
       include: { cliente: true, itens: { include: { produto: true } } },
     }),
   ]);
+
+  // Só checa disponibilidade pra quem ainda não foi produzido — depois de EM_PRODUCAO
+  // em diante a matéria-prima já foi baixada (ou já era suficiente).
+  const disponibilidadePorPedido = new Map<number, boolean>();
+  for (const p of pedidos) {
+    if (p.status !== "PENDENTE" && p.status !== "APROVADO") continue;
+    let faltaAlgo = false;
+    for (const item of p.itens) {
+      const disponibilidade = await verificarDisponibilidade(item.produtoId, Number(item.quantidade));
+      if (disponibilidade.some((d) => !d.suficiente)) {
+        faltaAlgo = true;
+        break;
+      }
+    }
+    disponibilidadePorPedido.set(p.id, faltaAlgo);
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -117,7 +134,12 @@ export default async function ComercialPage() {
                     </TableCell>
                     <TableCell>{formatCurrencyBRL(valor)}</TableCell>
                     <TableCell>
-                      <Badge variant={STATUS_PEDIDO_BADGE[p.status]}>{STATUS_PEDIDO_LABEL[p.status]}</Badge>
+                      <div className="flex flex-col gap-1">
+                        <Badge variant={STATUS_PEDIDO_BADGE[p.status]}>{STATUS_PEDIDO_LABEL[p.status]}</Badge>
+                        {disponibilidadePorPedido.get(p.id) && (
+                          <span className="text-xs font-medium text-destructive">Falta matéria-prima</span>
+                        )}
+                      </div>
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{formatDateTime(p.createdAt)}</TableCell>
                     <TableCell>

@@ -113,7 +113,9 @@ async function main() {
       create: { cargoId: cargoTecnico.id, recurso: r.chave, podeVer: true, podeCriar: true, podeEditar: true },
     });
   }
-  for (const r of RECURSOS.filter((r) => r.modulo === "Financeiro" || r.chave === "fiscal.notas")) {
+  for (const r of RECURSOS.filter(
+    (r) => r.modulo === "Financeiro" || r.chave === "fiscal.notas" || r.chave === "producao.custeio" || r.chave === "patrimonio.ativos"
+  )) {
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoFinanceiro.id, recurso: r.chave } },
       update: {},
@@ -129,14 +131,23 @@ async function main() {
   }
 
   // Cargos do fluxo real repassado pela Karol (pedido -> produção -> laudo -> nota -> expedição).
-  for (const r of RECURSOS.filter((r) => r.chave === "comercial.pedidos" || r.chave === "nucleo.cadastros")) {
+  for (const r of RECURSOS.filter(
+    (r) => r.chave === "comercial.pedidos" || r.chave === "nucleo.cadastros" || r.chave === "patrimonio.ativos"
+  )) {
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoComprador.id, recurso: r.chave } },
       update: {},
       create: { cargoId: cargoComprador.id, recurso: r.chave, podeVer: true, podeCriar: true, podeAprovar: r.chave === "comercial.pedidos" },
     });
   }
-  for (const r of RECURSOS.filter((r) => r.chave === "producao.ordens" || r.chave === "producao.formulas" || r.chave === "producao.lotes" || r.chave === "estoque.movimentos")) {
+  for (const r of RECURSOS.filter(
+    (r) =>
+      r.chave === "producao.ordens" ||
+      r.chave === "producao.formulas" ||
+      r.chave === "producao.lotes" ||
+      r.chave === "producao.custeio" ||
+      r.chave === "estoque.movimentos"
+  )) {
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoLiderProducao.id, recurso: r.chave } },
       update: {},
@@ -843,6 +854,36 @@ async function main() {
       createdById: financeiro.id,
       itens: { create: [{ materiaPrimaId: mpOxidoMagnesio.id, quantidade: 2000, precoUnitario: 1.9 }] },
     },
+  });
+
+  // ---------------------------------------------------------------
+  // Patrimônio (Ativos/CAPEX)
+  // ---------------------------------------------------------------
+  await prisma.ativo.createMany({
+    data: [
+      {
+        nome: "Reator industrial 2000L",
+        categoria: "Equipamento de Produção",
+        fornecedorId: fornecedorNacional.id,
+        numeroSerie: "RX-2000-0042",
+        dataAquisicao: daysFromNow(-540),
+        valorAquisicao: 185000,
+        localizacao: "Galpão 2 — Suzano",
+        vidaUtilAnos: 15,
+        createdById: joseHigor.id,
+      },
+      {
+        nome: "Empilhadeira elétrica 2,5t",
+        categoria: "Veículo",
+        fornecedorId: fornecedorNacional.id,
+        numeroSerie: "EMP-2540-11",
+        dataAquisicao: daysFromNow(-210),
+        valorAquisicao: 62000,
+        localizacao: "Galpão 2 — Suzano",
+        vidaUtilAnos: 10,
+        createdById: joseHigor.id,
+      },
+    ],
   });
 
   // ---------------------------------------------------------------

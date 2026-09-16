@@ -30,6 +30,8 @@ export const RECURSOS: RecursoDef[] = [
   { chave: "financeiro.contasPagar", modulo: "Financeiro", label: "Contas a pagar" },
   { chave: "governanca.fechamento", modulo: "Governança", label: "Fechamento e prestação de contas" },
   { chave: "logistica.expedicao", modulo: "Logística", label: "Expedição" },
+  { chave: "producao.custeio", modulo: "Produção", label: "Centro de custo" },
+  { chave: "patrimonio.ativos", modulo: "Patrimônio", label: "Ativos (CAPEX)" },
   { chave: "pessoas.colaboradores", modulo: "Pessoas", label: "Colaboradores e treinamentos" },
   { chave: "pessoas.tarefas", modulo: "Pessoas", label: "Tarefas" },
   { chave: "cerebro.chat", modulo: "Cérebro (IA)", label: "Chat com os dados" },

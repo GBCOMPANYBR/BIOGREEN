@@ -252,6 +252,7 @@ model Fornecedor {
   notasFiscaisEntrada NotaFiscalEntrada[]
   contasPagar        ContaPagar[]
   inspecoesRecebimento InspecaoRecebimento[]
+  ativos             Ativo[]
 }
 
 model Transportadora {
@@ -263,6 +264,29 @@ model Transportadora {
   ativo    Boolean @default(true)
 
   expedicoes Expedicao[]
+}
+
+/// Patrimônio/CAPEX — equipamentos e outros ativos comprados pela empresa (não confundir
+/// com `Equipamento`, que é só reator/misturador de produção). Pedido pelo Renato/Karol na
+/// reunião de 2026-09-16 — hoje é rastreado manualmente "no nome do fornecedor".
+model Ativo {
+  id             Int        @id @default(autoincrement())
+  nome           String
+  categoria      String
+  fornecedorId   Int?
+  fornecedor     Fornecedor? @relation(fields: [fornecedorId], references: [id])
+  numeroSerie    String?
+  dataAquisicao  DateTime?
+  valorAquisicao Decimal?   @db.Decimal(18, 2)
+  localizacao    String?
+  /// "ATIVO" | "BAIXADO" — sem enum pra não travar o vocabulário antes de confirmar com o cliente.
+  status         String     @default("ATIVO")
+  vidaUtilAnos   Int?
+  createdById    Int?
+  updatedById    Int?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  deletedAt      DateTime?
 }
 
 model MateriaPrima {
@@ -1135,6 +1159,7 @@ model Expedicao {
   transportadora   Transportadora? @relation(fields: [transportadoraId], references: [id])
   romaneioUrl      String?
   dataAgendamento  DateTime?
+  valorFrete       Decimal?        @db.Decimal(18, 2)
   comprovanteUrl   String?
   assinaturaUrl    String?
   createdAt        DateTime        @default(now())

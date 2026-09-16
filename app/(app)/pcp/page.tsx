@@ -1,11 +1,13 @@
 import { requireModuleAccess } from "@/lib/nav-visibility";
 import { prisma } from "@/lib/prisma";
 import { aprovarPCP } from "@/lib/actions";
+import { saldosMateriaPrima } from "@/lib/estoque";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { formatNumber } from "@/lib/format";
+import { cn } from "@/lib/utils";
 
 export default async function PcpPage() {
   await requireModuleAccess("producao.formulas");
@@ -18,6 +20,9 @@ export default async function PcpPage() {
       formula: { include: { produto: true, itens: { include: { materiaPrima: true } } } },
     },
   });
+
+  const materiaPrimaIds = [...new Set(ordens.flatMap((op) => op.formula.itens.map((i) => i.materiaPrimaId)))];
+  const saldos = await saldosMateriaPrima(materiaPrimaIds);
 
   return (
     <div className="flex flex-col gap-6">
@@ -41,6 +46,9 @@ export default async function PcpPage() {
       {ordens.map((op) => {
         const rendimento = Number(op.formula.rendimento ?? 0);
         const fator = rendimento > 0 ? Number(op.quantidadePlanejada) / rendimento : 1;
+        const faltaAlgo = op.formula.itens.some(
+          (item) => (saldos.get(item.materiaPrimaId) ?? 0) < Number(item.quantidade) * fator
+        );
         return (
           <Card key={op.id}>
             <CardHeader className="flex-row items-center justify-between gap-4 sm:flex">
@@ -53,7 +61,11 @@ export default async function PcpPage() {
                   {formatNumber(op.quantidadePlanejada, 0)} kg planejados
                 </p>
               </div>
-              <Badge variant="secondary">Aguardando PCP</Badge>
+              {faltaAlgo ? (
+                <Badge variant="destructive">Falta matéria-prima</Badge>
+              ) : (
+                <Badge variant="secondary">Aguardando PCP</Badge>
+              )}
             </CardHeader>
             <CardContent>
               {op.formula.itens.length === 0 ? (
@@ -67,22 +79,25 @@ export default async function PcpPage() {
                     Fórmula (rendimento base: {formatNumber(rendimento, 0)} kg — ajuste se precisar)
                   </p>
                   <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {op.formula.itens.map((item) => (
-                      <div key={item.id} className="flex flex-col gap-1.5">
-                        <label className="text-sm">
-                          {item.materiaPrima.nome}{" "}
-                          <span className="text-xs text-muted-foreground">
-                            (calculado: {formatNumber(Number(item.quantidade) * fator, 1)} kg)
-                          </span>
-                        </label>
-                        <Input
-                          type="number"
-                          step="0.001"
-                          name={`qtd_${item.id}`}
-                          defaultValue={Number(item.quantidade)}
-                        />
-                      </div>
-                    ))}
+                    {op.formula.itens.map((item) => {
+                      const necessario = Number(item.quantidade) * fator;
+                      const saldo = saldos.get(item.materiaPrimaId) ?? 0;
+                      const suficiente = saldo >= necessario;
+                      return (
+                        <div key={item.id} className="flex flex-col gap-1.5">
+                          <label className="text-sm">
+                            {item.materiaPrima.nome}{" "}
+                            <span className="text-xs text-muted-foreground">
+                              (calculado: {formatNumber(necessario, 1)} kg)
+                            </span>
+                          </label>
+                          <Input type="number" step="0.001" name={`qtd_${item.id}`} defaultValue={Number(item.quantidade)} />
+                          <p className={cn("text-xs", suficiente ? "text-muted-foreground" : "font-medium text-destructive")}>
+                            Saldo em estoque: {formatNumber(saldo, 1)} kg{!suficiente && " — insuficiente"}
+                          </p>
+                        </div>
+                      );
+                    })}
                   </div>
                   <div>
                     <Button type="submit" variant="accent">

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, can } from "@/lib/permissions";
+import { saveAttachmentFile } from "@/lib/storage";
 import type { Acao } from "@/lib/recursos";
 
 async function requireAction(recurso: string, acao: Acao) {
@@ -16,6 +17,13 @@ function numeroSequencial(prefixo: string, contagemAtual: number): string {
   const ano = new Date().getFullYear();
   return `${prefixo}-${ano}-${String(contagemAtual + 1).padStart(4, "0")}`;
 }
+
+// Estimativas usadas pra calcular o custo de cada lote automaticamente até a Biogreen
+// confirmar valores reais (hora de mão de obra, rateio de embalagem/energia por kg) —
+// ver docs/PERGUNTAS.md. Nenhum lançamento fiscal depende disso; é só Centro de Custo.
+const VALOR_HORA_MAO_DE_OBRA = 45;
+const CUSTO_EMBALAGEM_POR_KG = 0.15;
+const CUSTO_ENERGIA_POR_KG = 0.08;
 
 export async function criarPedido(formData: FormData) {
   const user = await requireAction("comercial.pedidos", "podeCriar");
@@ -207,7 +215,7 @@ export async function concluirProducao(ordemId: number) {
 
   const op = await prisma.ordemProducao.findUniqueOrThrow({
     where: { id: ordemId },
-    include: { formula: true },
+    include: { formula: { include: { itens: { include: { materiaPrima: true } } } } },
   });
   if (op.status === "CONCLUIDA") return;
 
@@ -246,6 +254,29 @@ export async function concluirProducao(ordemId: number) {
     });
   }
 
+  // Centro de Custo: calcula o custo do lote na hora — matéria-prima pelo custo médio
+  // cadastrado, mão de obra pelo tempo da fórmula, embalagem/energia por kg produzido.
+  const rendimentoCusto = Number(op.formula.rendimento ?? 0);
+  const fatorCusto = rendimentoCusto > 0 ? Number(op.quantidadePlanejada) / rendimentoCusto : 1;
+  const custoMateriaPrima = op.formula.itens.reduce(
+    (acc, item) => acc + Number(item.quantidade) * fatorCusto * Number(item.materiaPrima.custoMedio ?? 0),
+    0
+  );
+  const custoMaoObra = (Number(op.formula.tempoMinutos ?? 0) / 60) * VALOR_HORA_MAO_DE_OBRA;
+  const custoEmbalagem = Number(op.quantidadePlanejada) * CUSTO_EMBALAGEM_POR_KG;
+  const custoEnergiaRateada = Number(op.quantidadePlanejada) * CUSTO_ENERGIA_POR_KG;
+
+  await prisma.custoLote.create({
+    data: {
+      loteId: lote.id,
+      custoMateriaPrima,
+      custoMaoObra,
+      custoEmbalagem,
+      custoEnergiaRateada,
+      custoTotal: custoMateriaPrima + custoMaoObra + custoEmbalagem + custoEnergiaRateada,
+    },
+  });
+
   await prisma.auditLog.create({
     data: { usuarioId: user.id, entidade: "OrdemProducao", entidadeId: op.id, acao: "concluiu produção de" },
   });
@@ -253,6 +284,7 @@ export async function concluirProducao(ordemId: number) {
   revalidatePath("/producao");
   revalidatePath("/estoque");
   revalidatePath("/comercial");
+  revalidatePath("/custeio");
   revalidatePath("/");
 }
 
@@ -392,4 +424,88 @@ export async function emitirLaudo(loteId: number) {
   revalidatePath("/qualidade");
   revalidatePath("/producao");
   revalidatePath("/");
+}
+
+export async function criarAtivo(formData: FormData) {
+  const user = await requireAction("patrimonio.ativos", "podeCriar");
+
+  const nome = formData.get("nome") as string;
+  const categoria = formData.get("categoria") as string;
+  if (!nome || !categoria) throw new Error("Preencha nome e categoria.");
+
+  const fornecedorId = formData.get("fornecedorId") ? Number(formData.get("fornecedorId")) : null;
+  const valorAquisicao = formData.get("valorAquisicao") ? Number(formData.get("valorAquisicao")) : null;
+  const dataAquisicao = formData.get("dataAquisicao") ? new Date(formData.get("dataAquisicao") as string) : null;
+
+  const ativo = await prisma.ativo.create({
+    data: {
+      nome,
+      categoria,
+      fornecedorId,
+      numeroSerie: (formData.get("numeroSerie") as string) || null,
+      dataAquisicao,
+      valorAquisicao,
+      localizacao: (formData.get("localizacao") as string) || null,
+      vidaUtilAnos: formData.get("vidaUtilAnos") ? Number(formData.get("vidaUtilAnos")) : null,
+      createdById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "Ativo", entidadeId: ativo.id, acao: "cadastrou" },
+  });
+
+  revalidatePath("/ativos");
+  revalidatePath("/");
+}
+
+export async function baixarAtivo(ativoId: number) {
+  const user = await requireAction("patrimonio.ativos", "podeEditar");
+
+  await prisma.ativo.update({ where: { id: ativoId }, data: { status: "BAIXADO", updatedById: user.id } });
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "Ativo", entidadeId: ativoId, acao: "deu baixa em" },
+  });
+
+  revalidatePath("/ativos");
+}
+
+export async function atualizarExpedicao(formData: FormData) {
+  const user = await requireAction("logistica.expedicao", "podeEditar");
+
+  const expedicaoId = Number(formData.get("expedicaoId"));
+  const valorFreteRaw = formData.get("valorFrete");
+  const valorFrete = valorFreteRaw && valorFreteRaw !== "" ? Number(valorFreteRaw) : undefined;
+
+  if (valorFrete !== undefined) {
+    await prisma.expedicao.update({ where: { id: expedicaoId }, data: { valorFrete } });
+  }
+
+  const arquivo = formData.get("arquivo");
+  if (arquivo instanceof File && arquivo.size > 0) {
+    const bytes = Buffer.from(await arquivo.arrayBuffer());
+    const url = await saveAttachmentFile("Expedicao", expedicaoId, arquivo.name, bytes);
+    await prisma.anexo.create({
+      data: {
+        entidadeTipo: "Expedicao",
+        entidadeId: expedicaoId,
+        nome: arquivo.name,
+        url,
+        mimeType: arquivo.type || null,
+        tamanho: arquivo.size,
+        createdById: user.id,
+      },
+    });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      usuarioId: user.id,
+      entidade: "Expedicao",
+      entidadeId: expedicaoId,
+      acao: arquivo instanceof File && arquivo.size > 0 ? "anexou canhoto/NF em" : "atualizou frete de",
+    },
+  });
+
+  revalidatePath("/logistica");
 }

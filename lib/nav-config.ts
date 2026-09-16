@@ -14,6 +14,8 @@ import {
   Truck,
   Users,
   Brain,
+  Calculator,
+  Package2,
   type LucideIcon,
 } from "lucide-react";
 
@@ -35,9 +37,11 @@ export const NAV_ITEMS: NavItem[] = [
   { slug: "tecnica", modulo: "Assistência Técnica", label: "Assistência Técnica", icon: Stethoscope, recurso: "tecnica.visitas", fase: 1 },
   { slug: "pcp", modulo: "PCP", label: "PCP", icon: ClipboardList, recurso: "producao.formulas", fase: 3 },
   { slug: "producao", modulo: "Produção", label: "Produção", icon: Factory, recurso: "producao.ordens", fase: 3 },
+  { slug: "custeio", modulo: "Produção", label: "Centro de Custo", icon: Calculator, recurso: "producao.custeio", fase: 3 },
   { slug: "qualidade", modulo: "Qualidade", label: "Qualidade / Laboratório", icon: FlaskConical, recurso: "qualidade.especificacoes", fase: 3 },
   { slug: "estoque", modulo: "Estoque", label: "Estoque", icon: Warehouse, recurso: "estoque.movimentos", fase: 3 },
   { slug: "compras", modulo: "Compras", label: "Compras", icon: ShoppingCart, recurso: "compras.pedidos", fase: 3 },
+  { slug: "ativos", modulo: "Patrimônio", label: "Ativos (CAPEX)", icon: Package2, recurso: "patrimonio.ativos", fase: 3 },
   { slug: "fiscal", modulo: "Fiscal", label: "Fiscal", icon: Receipt, recurso: "fiscal.notas", fase: 2 },
   { slug: "financeiro", modulo: "Financeiro", label: "Financeiro", icon: Wallet, recurso: "financeiro.contasReceber", fase: 2 },
   { slug: "governanca", modulo: "Governança", label: "Prestação de Contas", icon: ShieldCheck, recurso: "governanca.fechamento", fase: 4 },
