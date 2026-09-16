@@ -24,6 +24,7 @@ export const RECURSOS: RecursoDef[] = [
   { chave: "qualidade.especificacoes", modulo: "Qualidade", label: "Especificações e análises" },
   { chave: "qualidade.naoConformidades", modulo: "Qualidade", label: "Não conformidades" },
   { chave: "estoque.movimentos", modulo: "Estoque", label: "Estoque e inventário" },
+  { chave: "estoque.materiasPrimas", modulo: "Estoque", label: "Cadastro de matérias-primas" },
   { chave: "compras.pedidos", modulo: "Compras", label: "Pedidos de compra" },
   { chave: "fiscal.notas", modulo: "Fiscal", label: "Notas fiscais" },
   { chave: "financeiro.contasReceber", modulo: "Financeiro", label: "Contas a receber" },

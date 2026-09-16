@@ -10,7 +10,12 @@ import { can, getCurrentUser, type AuthedUser } from "@/lib/permissions";
  * diretamente a partir de uma lista de slugs já calculada no servidor.
  */
 export function getVisibleNavItems(user: AuthedUser): NavItem[] {
-  return NAV_ITEMS.filter((item) => item.slug === "" || can(user, item.recurso, "podeVer"));
+  return NAV_ITEMS.filter(
+    (item) =>
+      item.slug === "" ||
+      can(user, item.recurso, "podeVer") ||
+      (item.recursoAlt && can(user, item.recursoAlt, "podeVer"))
+  );
 }
 
 export function getVisibleSlugs(user: AuthedUser): string[] {
@@ -27,5 +32,15 @@ export async function requireModuleAccess(recurso: string): Promise<AuthedUser> 
   const user = await getCurrentUser();
   if (!user) redirect("/login");
   if (!can(user, recurso, "podeVer")) redirect("/");
+  return user;
+}
+
+/** Igual a requireModuleAccess, mas passa se o usuário tiver "podeVer" em QUALQUER um dos
+ * recursos — usado quando uma página tem abas cobertas por permissões diferentes (ex.:
+ * Estoque tem "movimentos" e "cadastro de matérias-primas", e nem todo mundo vê as duas). */
+export async function requireAnyModuleAccess(recursos: string[]): Promise<AuthedUser> {
+  const user = await getCurrentUser();
+  if (!user) redirect("/login");
+  if (!recursos.some((r) => can(user, r, "podeVer"))) redirect("/");
   return user;
 }

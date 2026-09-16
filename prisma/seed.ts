@@ -132,12 +132,24 @@ async function main() {
 
   // Cargos do fluxo real repassado pela Karol (pedido -> produção -> laudo -> nota -> expedição).
   for (const r of RECURSOS.filter(
-    (r) => r.chave === "comercial.pedidos" || r.chave === "nucleo.cadastros" || r.chave === "patrimonio.ativos"
+    (r) =>
+      r.chave === "comercial.pedidos" ||
+      r.chave === "nucleo.cadastros" ||
+      r.chave === "patrimonio.ativos" ||
+      r.chave === "estoque.materiasPrimas"
   )) {
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoComprador.id, recurso: r.chave } },
       update: {},
-      create: { cargoId: cargoComprador.id, recurso: r.chave, podeVer: true, podeCriar: true, podeAprovar: r.chave === "comercial.pedidos" },
+      create: {
+        cargoId: cargoComprador.id,
+        recurso: r.chave,
+        podeVer: true,
+        podeCriar: true,
+        podeEditar: r.chave === "estoque.materiasPrimas",
+        podeExcluir: r.chave === "estoque.materiasPrimas",
+        podeAprovar: r.chave === "comercial.pedidos",
+      },
     });
   }
   for (const r of RECURSOS.filter(
@@ -146,7 +158,8 @@ async function main() {
       r.chave === "producao.formulas" ||
       r.chave === "producao.lotes" ||
       r.chave === "producao.custeio" ||
-      r.chave === "estoque.movimentos"
+      r.chave === "estoque.movimentos" ||
+      r.chave === "estoque.materiasPrimas"
   )) {
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoLiderProducao.id, recurso: r.chave } },

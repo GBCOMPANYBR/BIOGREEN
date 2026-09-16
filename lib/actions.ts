@@ -516,3 +516,67 @@ export async function atualizarExpedicao(formData: FormData) {
 
   revalidatePath("/logistica");
 }
+
+export async function criarMateriaPrima(formData: FormData) {
+  const user = await requireAction("estoque.materiasPrimas", "podeCriar");
+
+  const nome = (formData.get("nome") as string)?.trim();
+  const unidadeMedidaId = Number(formData.get("unidadeMedidaId"));
+  if (!nome || !unidadeMedidaId) throw new Error("Preencha nome e unidade de medida.");
+
+  const fornecedorPadraoId = formData.get("fornecedorPadraoId") ? Number(formData.get("fornecedorPadraoId")) : null;
+  const custoMedio = formData.get("custoMedio") ? Number(formData.get("custoMedio")) : null;
+  const estoqueMinimo = formData.get("estoqueMinimo") ? Number(formData.get("estoqueMinimo")) : null;
+
+  const contagem = await prisma.materiaPrima.count();
+  const codigo = `MP-${String(contagem + 1).padStart(4, "0")}`;
+
+  const mp = await prisma.materiaPrima.create({
+    data: { codigo, nome, unidadeMedidaId, fornecedorPadraoId, custoMedio, estoqueMinimo },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "MateriaPrima", entidadeId: mp.id, acao: "cadastrou" },
+  });
+
+  revalidatePath("/estoque");
+}
+
+export async function atualizarMateriaPrima(formData: FormData) {
+  const user = await requireAction("estoque.materiasPrimas", "podeEditar");
+
+  const id = Number(formData.get("materiaPrimaId"));
+  const nome = (formData.get("nome") as string)?.trim();
+  const unidadeMedidaId = Number(formData.get("unidadeMedidaId"));
+  if (!nome || !unidadeMedidaId) throw new Error("Preencha nome e unidade de medida.");
+
+  const fornecedorPadraoId = formData.get("fornecedorPadraoId") ? Number(formData.get("fornecedorPadraoId")) : null;
+  const custoMedio = formData.get("custoMedio") ? Number(formData.get("custoMedio")) : null;
+  const estoqueMinimo = formData.get("estoqueMinimo") ? Number(formData.get("estoqueMinimo")) : null;
+
+  await prisma.materiaPrima.update({
+    where: { id },
+    data: { nome, unidadeMedidaId, fornecedorPadraoId, custoMedio, estoqueMinimo },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "MateriaPrima", entidadeId: id, acao: "editou" },
+  });
+
+  revalidatePath("/estoque");
+}
+
+export async function excluirMateriaPrima(materiaPrimaId: number) {
+  const user = await requireAction("estoque.materiasPrimas", "podeExcluir");
+
+  await prisma.materiaPrima.update({
+    where: { id: materiaPrimaId },
+    data: { deletedAt: new Date(), ativo: false },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "MateriaPrima", entidadeId: materiaPrimaId, acao: "excluiu" },
+  });
+
+  revalidatePath("/estoque");
+}

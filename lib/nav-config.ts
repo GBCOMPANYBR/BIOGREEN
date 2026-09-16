@@ -26,6 +26,9 @@ export interface NavItem {
   icon: LucideIcon;
   /** Recurso do RBAC associado ao módulo — controla se aparece na sidebar para o usuário. */
   recurso: string;
+  /** Recurso alternativo — o item aparece se o usuário tiver "podeVer" em QUALQUER um dos dois
+   * (útil quando a página tem abas cobertas por permissões diferentes, ex. Estoque). */
+  recursoAlt?: string;
   /** Fase do docs/PLANO.md em que a UI do módulo é implementada. */
   fase: 0 | 1 | 2 | 3 | 4;
 }
@@ -39,7 +42,7 @@ export const NAV_ITEMS: NavItem[] = [
   { slug: "producao", modulo: "Produção", label: "Produção", icon: Factory, recurso: "producao.ordens", fase: 3 },
   { slug: "custeio", modulo: "Produção", label: "Centro de Custo", icon: Calculator, recurso: "producao.custeio", fase: 3 },
   { slug: "qualidade", modulo: "Qualidade", label: "Qualidade / Laboratório", icon: FlaskConical, recurso: "qualidade.especificacoes", fase: 3 },
-  { slug: "estoque", modulo: "Estoque", label: "Estoque", icon: Warehouse, recurso: "estoque.movimentos", fase: 3 },
+  { slug: "estoque", modulo: "Estoque", label: "Estoque", icon: Warehouse, recurso: "estoque.movimentos", recursoAlt: "estoque.materiasPrimas", fase: 3 },
   { slug: "compras", modulo: "Compras", label: "Compras", icon: ShoppingCart, recurso: "compras.pedidos", fase: 3 },
   { slug: "ativos", modulo: "Patrimônio", label: "Ativos (CAPEX)", icon: Package2, recurso: "patrimonio.ativos", fase: 3 },
   { slug: "fiscal", modulo: "Fiscal", label: "Fiscal", icon: Receipt, recurso: "fiscal.notas", fase: 2 },
