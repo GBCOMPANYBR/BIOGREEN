@@ -164,7 +164,7 @@ async function MateriasPrimasTab({ podeEditar, podeExcluir }: { podeEditar: bool
                 return (
                   <TableRow key={m.id}>
                     <TableCell colSpan={podeExcluir ? 8 : 7} className="p-3">
-                      <form action={atualizarMateriaPrima} className="grid grid-cols-2 items-end gap-2 sm:grid-cols-6">
+                      <form id={`mp-form-${m.id}`} action={atualizarMateriaPrima} className="grid grid-cols-2 items-end gap-2 sm:grid-cols-6">
                         <input type="hidden" name="materiaPrimaId" value={m.id} />
                         <div className="flex flex-col gap-1 sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">{m.codigo}</Label>
@@ -199,23 +199,23 @@ async function MateriasPrimasTab({ podeEditar, podeExcluir }: { podeEditar: bool
                           <Label className="text-xs text-muted-foreground">Estoque mín.</Label>
                           <Input name="estoqueMinimo" type="number" step="0.001" min="0" defaultValue={m.estoqueMinimo ? Number(m.estoqueMinimo) : undefined} />
                         </div>
-                        <div className="col-span-2 flex items-center gap-2 sm:col-span-6">
-                          <span className="text-xs text-muted-foreground">
-                            Saldo atual:{" "}
-                            <span className={cn("font-medium", abaixoDoMinimo ? "text-destructive" : "text-foreground")}>{formatNumber(saldo, 1)}</span>
-                          </span>
-                          <Button type="submit" size="sm" variant="outline" className="ml-auto">
-                            Salvar
-                          </Button>
-                          {podeExcluir && (
-                            <form action={excluirMateriaPrima.bind(null, m.id)}>
-                              <Button type="submit" size="sm" variant="ghost" className="text-destructive hover:text-destructive">
-                                Excluir
-                              </Button>
-                            </form>
-                          )}
-                        </div>
                       </form>
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          Saldo atual:{" "}
+                          <span className={cn("font-medium", abaixoDoMinimo ? "text-destructive" : "text-foreground")}>{formatNumber(saldo, 1)}</span>
+                        </span>
+                        <Button type="submit" form={`mp-form-${m.id}`} size="sm" variant="outline" className="ml-auto">
+                          Salvar
+                        </Button>
+                        {podeExcluir && (
+                          <form action={excluirMateriaPrima.bind(null, m.id)}>
+                            <Button type="submit" size="sm" variant="ghost" className="text-destructive hover:text-destructive">
+                              Excluir
+                            </Button>
+                          </form>
+                        )}
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
