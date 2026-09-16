@@ -67,6 +67,7 @@ export async function aprovarPedido(pedidoId: number) {
     where: { id: pedidoId },
     include: { itens: true },
   });
+  if (pedido.status !== "PENDENTE") return;
 
   for (const item of pedido.itens) {
     let formula = await prisma.formula.findFirst({
@@ -296,6 +297,7 @@ export async function gerarNotaFiscal(pedidoId: number) {
     where: { id: pedidoId },
     include: { itens: true },
   });
+  if (pedido.status !== "EM_PRODUCAO") return;
 
   const valorTotal = pedido.itens.reduce((acc, i) => acc + Number(i.quantidade) * Number(i.precoUnitario), 0);
   const nfContagem = await prisma.notaFiscal.count();
@@ -354,6 +356,7 @@ export async function gerarExpedicao(pedidoId: number) {
     where: { id: pedidoId },
     include: { itens: true },
   });
+  if (pedido.status !== "FATURADO") return;
 
   const local = await prisma.localEstoque.findFirst({ where: { tipo: "PRODUTO_ACABADO" } });
   const agora = new Date();

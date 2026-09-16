@@ -589,7 +589,10 @@ async function main() {
     data: {
       clienteId: clienteAmazonia.id,
       numero: "PV-2026-0002",
-      status: "FATURADO",
+      // Já nasce com expedição e movimento de saída no seed (ver mais abaixo) — status
+      // precisa refletir isso, senão o pedido aparece em Logística como "aguardando saída"
+      // e clicar em Programar saída falha (unique constraint: já existe uma Expedicao).
+      status: "EXPEDIDO",
       condicaoPagamento: "45 dias",
       freteTipo: "FOB",
       dataPrometida: daysFromNow(-2),
