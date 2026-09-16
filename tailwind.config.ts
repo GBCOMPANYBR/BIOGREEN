@@ -40,6 +40,9 @@ const config: Config = {
           foreground: "hsl(var(--sidebar-foreground))",
           border: "hsl(var(--sidebar-border))",
         },
+        "chart-in": "hsl(var(--chart-in))",
+        "chart-out": "hsl(var(--chart-out))",
+        "chart-trend": "hsl(var(--chart-trend))",
       },
       borderRadius: {
         lg: "var(--radius)",

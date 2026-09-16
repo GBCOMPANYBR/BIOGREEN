@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { getCurrentUser, can } from "@/lib/permissions";
 import { saveAttachmentFile } from "@/lib/storage";
+import { calcularParcelas } from "@/lib/parcelas";
 import type { Acao } from "@/lib/recursos";
 
 async function requireAction(recurso: string, acao: Acao) {
@@ -316,16 +317,19 @@ export async function gerarNotaFiscal(pedidoId: number) {
 
   const planoReceita = await prisma.planoContas.findFirst({ where: { tipo: "RECEITA" } });
 
-  await prisma.contaReceber.create({
-    data: {
+  // Uma parcela por prazo na condição de pagamento do pedido (ex.: "30/60/90 dias" -> 3
+  // parcelas) — antes gerava sempre uma parcela única fixa em 30 dias.
+  const parcelas = calcularParcelas(pedido.condicaoPagamento, valorTotal, agora);
+  await prisma.contaReceber.createMany({
+    data: parcelas.map((p) => ({
       clienteId: pedido.clienteId,
       pedidoVendaId: pedido.id,
       planoContasId: planoReceita?.id,
-      valor: valorTotal,
+      valor: p.valor,
       valorPago: 0,
-      vencimento: new Date(agora.getTime() + 30 * 24 * 60 * 60 * 1000),
+      vencimento: p.vencimento,
       status: "ABERTO",
-    },
+    })),
   });
 
   await prisma.pedidoVenda.update({
