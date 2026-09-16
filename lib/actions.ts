@@ -5,6 +5,7 @@ import { prisma } from "@/lib/prisma";
 import { getCurrentUser, can } from "@/lib/permissions";
 import { saveAttachmentFile } from "@/lib/storage";
 import { calcularParcelas } from "@/lib/parcelas";
+import { lerPontosDoFormData, lerHidrometrosDoFormData } from "@/lib/relatorio-visita";
 import type { Acao } from "@/lib/recursos";
 
 async function requireAction(recurso: string, acao: Acao) {
@@ -579,4 +580,100 @@ export async function excluirMateriaPrima(materiaPrimaId: number) {
   });
 
   revalidatePath("/estoque");
+}
+
+export async function criarVisita(formData: FormData) {
+  const user = await requireAction("tecnica.visitas", "podeCriar");
+
+  const clienteId = Number(formData.get("clienteId"));
+  const tecnicoId = Number(formData.get("tecnicoId"));
+  const dataAgendadaRaw = formData.get("dataAgendada") as string;
+  if (!clienteId || !tecnicoId || !dataAgendadaRaw) throw new Error("Preencha cliente, técnico e data.");
+
+  const visita = await prisma.visitaTecnica.create({
+    data: {
+      clienteId,
+      tecnicoId,
+      dataAgendada: new Date(`${dataAgendadaRaw}T12:00:00`),
+      roteiro: (formData.get("roteiro") as string) || null,
+      status: "AGENDADA",
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "VisitaTecnica", entidadeId: visita.id, acao: "agendou" },
+  });
+
+  revalidatePath("/tecnica");
+  revalidatePath("/");
+}
+
+export async function marcarVisitaNaoRealizada(formData: FormData) {
+  const user = await requireAction("tecnica.visitas", "podeEditar");
+
+  const visitaId = Number(formData.get("visitaId"));
+  const justificativa = (formData.get("justificativa") as string)?.trim();
+  if (!justificativa) throw new Error("Descreva o motivo da visita não realizada.");
+
+  await prisma.visitaTecnica.update({
+    where: { id: visitaId },
+    data: { status: "CANCELADA", justificativa },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "VisitaTecnica", entidadeId: visitaId, acao: "marcou como não realizada" },
+  });
+
+  revalidatePath("/tecnica");
+}
+
+export async function registrarRelatorioVisita(formData: FormData) {
+  const user = await requireAction("tecnica.visitas", "podeCriar");
+
+  const visitaTecnicaId = Number(formData.get("visitaTecnicaId"));
+  const visita = await prisma.visitaTecnica.findUniqueOrThrow({ where: { id: visitaTecnicaId } });
+
+  const pontos = lerPontosDoFormData(formData);
+  const hidrometros = lerHidrometrosDoFormData(formData);
+  const recomendacoes = (formData.get("recomendacoes") as string) || null;
+  const proximaAcao = (formData.get("proximaAcao") as string) || null;
+  const parametrosMedidos = JSON.parse(JSON.stringify({ pontos, hidrometros }));
+
+  await prisma.relatorioVisita.upsert({
+    where: { visitaTecnicaId },
+    update: { parametrosMedidos, produtosAplicados: [], recomendacoes, proximaAcao },
+    create: {
+      visitaTecnicaId,
+      parametrosMedidos,
+      produtosAplicados: [],
+      recomendacoes,
+      proximaAcao,
+    },
+  });
+
+  const fotos = formData.getAll("fotos").filter((f): f is File => f instanceof File && f.size > 0);
+  for (const foto of fotos) {
+    const bytes = Buffer.from(await foto.arrayBuffer());
+    const url = await saveAttachmentFile("VisitaTecnica", visitaTecnicaId, foto.name, bytes);
+    await prisma.anexo.create({
+      data: {
+        entidadeTipo: "VisitaTecnica",
+        entidadeId: visitaTecnicaId,
+        nome: foto.name,
+        url,
+        mimeType: foto.type || null,
+        tamanho: foto.size,
+        createdById: user.id,
+      },
+    });
+  }
+
+  await prisma.visitaTecnica.update({ where: { id: visita.id }, data: { status: "REALIZADA" } });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "VisitaTecnica", entidadeId: visita.id, acao: "registrou relatório de" },
+  });
+
+  revalidatePath("/tecnica");
+  revalidatePath("/");
 }

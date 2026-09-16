@@ -564,6 +564,9 @@ model VisitaTecnica {
   dataAgendada  DateTime
   status        StatusVisita @default(AGENDADA)
   roteiro       String?
+  /// Preenchido quando o técnico marca a visita como não realizada (feriado, emergência,
+  /// visita a outro cliente etc.) — vira a lista "Visita não realizada" do relatório mensal.
+  justificativa String?
   checkinLat    Decimal?     @db.Decimal(10, 7)
   checkinLng    Decimal?     @db.Decimal(10, 7)
   checkinFotoUrl String?

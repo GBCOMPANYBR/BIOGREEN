@@ -16,7 +16,7 @@ export function Topbar({ userName, visibleSlugs }: { userName: string; visibleSl
   }
 
   return (
-    <header className="flex h-14 items-center gap-4 border-b border-border bg-background px-4">
+    <header className="flex h-14 items-center gap-4 border-b border-border bg-background px-4 print:hidden">
       <div className="flex-1">
         <CommandPalette visibleSlugs={visibleSlugs} />
       </div>

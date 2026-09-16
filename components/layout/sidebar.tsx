@@ -15,7 +15,7 @@ export function Sidebar({ visibleSlugs }: { visibleSlugs: string[] }) {
   return (
     <aside
       className={cn(
-        "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 md:flex",
+        "hidden shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-200 print:hidden md:flex",
         collapsed ? "w-16" : "w-64"
       )}
     >
