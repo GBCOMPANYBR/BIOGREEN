@@ -27,7 +27,7 @@ export default async function ComercialPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Comercial — Pedidos de Venda</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Um pedido chega (hoje por e-mail, com José Higor) → aprovar envia direto pra produção.
+          Um pedido chega (hoje por e-mail, com José Higor) → aprovar envia pro PCP revisar a fórmula.
         </p>
       </div>
 
@@ -124,7 +124,7 @@ export default async function ComercialPage() {
                       {p.status === "PENDENTE" && (
                         <form action={aprovarPedido.bind(null, p.id)}>
                           <Button type="submit" size="sm" variant="accent">
-                            Aprovar → produção
+                            Aprovar → PCP
                           </Button>
                         </form>
                       )}

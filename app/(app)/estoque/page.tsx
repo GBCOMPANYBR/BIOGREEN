@@ -45,7 +45,7 @@ export default async function EstoquePage() {
                   </TableCell>
                   <TableCell className="text-xs text-muted-foreground">{m.localEstoque.nome}</TableCell>
                   <TableCell>
-                    <Badge variant={m.tipo === "ENTRADA" ? "default" : m.tipo === "SAIDA" ? "secondary" : "outline"}>
+                    <Badge variant={m.tipo === "ENTRADA" ? "default" : m.tipo === "SAIDA" ? "destructive" : "outline"}>
                       {m.tipo === "ENTRADA" ? "Entrada" : m.tipo === "SAIDA" ? "Saída" : m.tipo}
                     </Badge>
                   </TableCell>

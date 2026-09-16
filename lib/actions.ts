@@ -59,8 +59,6 @@ export async function aprovarPedido(pedidoId: number) {
     include: { itens: true },
   });
 
-  const almoxarifadoMp = await prisma.localEstoque.findFirst({ where: { tipo: "ALMOXARIFADO_MP" } });
-
   for (const item of pedido.itens) {
     let formula = await prisma.formula.findFirst({
       where: { produtoId: item.produtoId, ativa: true },
@@ -76,52 +74,131 @@ export async function aprovarPedido(pedidoId: number) {
     const opContagem = await prisma.ordemProducao.count();
     const numero = numeroSequencial("OP", opContagem);
 
-    const op = await prisma.ordemProducao.create({
+    // Nasce em PLANEJADA — vai pro PCP revisar/ajustar a fórmula antes de liberar a
+    // produção de verdade (é lá que a baixa automática de matéria-prima acontece).
+    await prisma.ordemProducao.create({
       data: {
         numero,
         pedidoVendaId: pedido.id,
         pedidoVendaItemId: item.id,
         formulaId: formula.id,
-        status: "EM_PRODUCAO",
+        status: "PLANEJADA",
         quantidadePlanejada: item.quantidade,
-        dataInicio: new Date(),
         createdById: user.id,
       },
     });
-
-    // Baixa automática das matérias-primas assim que a produção inicia — proporcional à
-    // fórmula (ex.: Biopac = 80% soda + 20% enxofre), sem ninguém precisar digitar percentual.
-    if (formula.itens.length > 0 && almoxarifadoMp) {
-      const rendimento = Number(formula.rendimento ?? 0);
-      const fator = rendimento > 0 ? Number(item.quantidade) / rendimento : 1;
-
-      for (const formulaItem of formula.itens) {
-        const quantidadeConsumida = Number(formulaItem.quantidade) * fator;
-        await prisma.estoqueMovimento.create({
-          data: {
-            localEstoqueId: almoxarifadoMp.id,
-            materiaPrimaId: formulaItem.materiaPrimaId,
-            tipo: "SAIDA",
-            quantidade: quantidadeConsumida,
-            motivo: `Consumo automático (fórmula) — ${op.numero}`,
-            createdById: user.id,
-          },
-        });
-      }
-    }
   }
 
   await prisma.pedidoVenda.update({
     where: { id: pedido.id },
-    data: { status: "EM_PRODUCAO", updatedById: user.id },
+    data: { status: "APROVADO", updatedById: user.id },
   });
 
   await prisma.auditLog.create({
-    data: { usuarioId: user.id, entidade: "PedidoVenda", entidadeId: pedido.id, acao: "aprovou e enviou à produção" },
+    data: { usuarioId: user.id, entidade: "PedidoVenda", entidadeId: pedido.id, acao: "aprovou e enviou ao PCP" },
   });
 
   revalidatePath("/comercial");
+  revalidatePath("/pcp");
+  revalidatePath("/");
+}
+
+export async function aprovarPCP(formData: FormData) {
+  const user = await requireAction("producao.formulas", "podeAprovar");
+
+  const opId = Number(formData.get("opId"));
+  const op = await prisma.ordemProducao.findUniqueOrThrow({
+    where: { id: opId },
+    include: { formula: { include: { itens: true } } },
+  });
+  if (op.status !== "PLANEJADA") return;
+
+  // Se o PCP mexeu em algum valor do formulário, isso vira uma NOVA versão da fórmula
+  // (não sobrescreve a original — outros pedidos continuam usando a fórmula base).
+  const edicoes = op.formula.itens
+    .map((item) => {
+      const valor = formData.get(`qtd_${item.id}`);
+      if (valor === null) return null;
+      const nova = Number(valor);
+      return Number.isFinite(nova) && nova !== Number(item.quantidade) ? { itemId: item.id, quantidade: nova } : null;
+    })
+    .filter((e): e is { itemId: number; quantidade: number } => e !== null);
+
+  let formulaFinal = op.formula;
+
+  if (edicoes.length > 0) {
+    const versaoMax = await prisma.formula.aggregate({
+      where: { produtoId: op.formula.produtoId },
+      _max: { versao: true },
+    });
+    formulaFinal = await prisma.formula.create({
+      data: {
+        produtoId: op.formula.produtoId,
+        versao: (versaoMax._max.versao ?? 0) + 1,
+        rendimento: op.formula.rendimento,
+        tempoMinutos: op.formula.tempoMinutos,
+        epi: op.formula.epi,
+        instrucoes: op.formula.instrucoes,
+        ativa: true,
+        itens: {
+          create: op.formula.itens.map((item) => {
+            const edicao = edicoes.find((e) => e.itemId === item.id);
+            return {
+              materiaPrimaId: item.materiaPrimaId,
+              quantidade: edicao ? edicao.quantidade : item.quantidade,
+              ordem: item.ordem,
+            };
+          }),
+        },
+      },
+      include: { itens: true },
+    });
+    await prisma.ordemProducao.update({ where: { id: op.id }, data: { formulaId: formulaFinal.id } });
+  }
+
+  // Baixa automática das matérias-primas ao liberar pra produção — proporcional à fórmula
+  // final (original ou ajustada pelo PCP), sem ninguém precisar digitar percentual.
+  const almoxarifadoMp = await prisma.localEstoque.findFirst({ where: { tipo: "ALMOXARIFADO_MP" } });
+  if (formulaFinal.itens.length > 0 && almoxarifadoMp) {
+    const rendimento = Number(formulaFinal.rendimento ?? 0);
+    const fator = rendimento > 0 ? Number(op.quantidadePlanejada) / rendimento : 1;
+
+    for (const item of formulaFinal.itens) {
+      await prisma.estoqueMovimento.create({
+        data: {
+          localEstoqueId: almoxarifadoMp.id,
+          materiaPrimaId: item.materiaPrimaId,
+          tipo: "SAIDA",
+          quantidade: Number(item.quantidade) * fator,
+          motivo: `Consumo automático (fórmula${edicoes.length > 0 ? " ajustada pelo PCP" : ""}) — ${op.numero}`,
+          createdById: user.id,
+        },
+      });
+    }
+  }
+
+  await prisma.ordemProducao.update({
+    where: { id: op.id },
+    data: { status: "EM_PRODUCAO", dataInicio: new Date() },
+  });
+
+  if (op.pedidoVendaId) {
+    await prisma.pedidoVenda.update({ where: { id: op.pedidoVendaId }, data: { status: "EM_PRODUCAO" } });
+  }
+
+  await prisma.auditLog.create({
+    data: {
+      usuarioId: user.id,
+      entidade: "OrdemProducao",
+      entidadeId: op.id,
+      acao: edicoes.length > 0 ? "ajustou a fórmula e liberou produção de" : "liberou produção de",
+    },
+  });
+
+  revalidatePath("/pcp");
   revalidatePath("/producao");
+  revalidatePath("/comercial");
+  revalidatePath("/estoque");
   revalidatePath("/");
 }
 

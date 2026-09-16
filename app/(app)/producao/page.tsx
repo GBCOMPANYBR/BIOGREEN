@@ -20,6 +20,7 @@ export default async function ProducaoPage() {
   await requireModuleAccess("producao.ordens");
 
   const ordens = await prisma.ordemProducao.findMany({
+    where: { status: { in: ["EM_PRODUCAO", "CONTROLE_QUALIDADE", "APROVADA", "REPROVADA", "CONCLUIDA"] } },
     orderBy: { createdAt: "desc" },
     include: {
       formula: { include: { produto: true, itens: { include: { materiaPrima: true } } } },
@@ -32,7 +33,7 @@ export default async function ProducaoPage() {
       <div>
         <h1 className="text-2xl font-semibold tracking-tight">Produção — Ordens</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          A baixa de matéria-prima já saiu automática, na proporção da fórmula, assim que a ordem entrou aqui — o Anderson só confirma quando o lote sai pronto.
+          O PCP já liberou essas ordens com a fórmula final travada, e já baixou a matéria-prima — o Anderson só confirma quando o lote sai pronto.
         </p>
       </div>
 
