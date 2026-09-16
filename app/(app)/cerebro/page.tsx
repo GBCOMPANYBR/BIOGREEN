@@ -1,3 +1,4 @@
+import { Brain } from "lucide-react";
 import { requireModuleAccess } from "@/lib/nav-visibility";
 import { PlaceholderModule } from "@/components/layout/placeholder-module";
 
@@ -6,8 +7,16 @@ export default async function CerebroPage() {
   return (
     <PlaceholderModule
       titulo="Cérebro (IA)"
-      descricao="Chat interno conectado aos dados da empresa, com permissão do usuário, resumo diário automático por setor e sugestões proativas."
+      icon={Brain}
       fase={4}
+      descricao="Uma pergunta em português, uma resposta com base nos dados reais da empresa — com a permissão de quem pergunta."
+      funcionalidades={[
+        'Chat interno: "quanto vendemos de PAC para o cliente X em 2026?", "quais lotes vencem em 30 dias?"',
+        "Respostas sempre respeitando a permissão de quem está perguntando",
+        "Resumo diário automático por setor",
+        "Sugestões proativas (cliente que reduziu consumo, matéria-prima a repor, título vencendo, laudo pendente)",
+        "Toda ação que altera dados exige confirmação humana e fica registrada na auditoria",
+      ]}
     />
   );
 }

@@ -150,8 +150,8 @@ async function main() {
     update: {},
     create: {
       empresaId: empresa.id,
-      nome: "Renato Souza",
-      email: "renato.souza@biogreenquimica.com.br",
+      nome: "Rodrigo Nascimento",
+      email: "rodrigo.nascimento@biogreenquimica.com.br",
       username: "financeiro1",
       passwordHash: senhaInicial,
       cargoId: cargoFinanceiro.id,

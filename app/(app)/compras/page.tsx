@@ -1,3 +1,4 @@
+import { ShoppingCart } from "lucide-react";
 import { requireModuleAccess } from "@/lib/nav-visibility";
 import { PlaceholderModule } from "@/components/layout/placeholder-module";
 
@@ -6,8 +7,15 @@ export default async function ComprasPage() {
   return (
     <PlaceholderModule
       titulo="Compras"
-      descricao="Requisição, cotação com fornecedores, pedido de compra, recebimento e conferência — incluindo custos de importação e câmbio."
+      icon={ShoppingCart}
       fase={3}
+      descricao="Da requisição ao pagamento, incluindo o que entra de fora — câmbio e nacionalização inclusos."
+      funcionalidades={[
+        "Requisição de compra → cotação com fornecedores → pedido → recebimento → conferência",
+        "Geração automática de contas a pagar a partir do pedido de compra recebido",
+        "Compras internacionais com moeda, câmbio do dia e custos de nacionalização",
+        "Histórico de preço e desempenho por fornecedor",
+      ]}
     />
   );
 }

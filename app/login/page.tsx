@@ -3,9 +3,16 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
+import { CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+
+const DESTAQUES = [
+  "Comercial, Produção, Qualidade, Estoque e Financeiro num só lugar",
+  "Rastreabilidade completa de lote — da matéria-prima à nota fiscal",
+  "Um chat que responde perguntas sobre os dados da sua empresa",
+];
 
 export default function LoginPage() {
   const [username, setUsername] = useState("");
@@ -37,44 +44,96 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-muted px-4">
-      <div className="w-full max-w-sm">
-        <div className="mb-8 flex flex-col items-center gap-2">
-          <Image src="/logo-biogreen.jpg" alt="Biogreen" width={140} height={68} priority />
-          <h1 className="text-lg font-semibold">BIOGREEN SYSTEM</h1>
+    <div className="flex min-h-screen bg-background text-foreground">
+      {/* Painel de marca — some em telas estreitas */}
+      <div className="relative hidden w-[44%] flex-col justify-between overflow-hidden bg-[linear-gradient(160deg,hsl(152_45%_18%),hsl(198_55%_16%))] p-12 text-white lg:flex">
+        <div
+          aria-hidden
+          className="pointer-events-none absolute inset-0 opacity-[0.15]"
+          style={{
+            backgroundImage:
+              "radial-gradient(circle at 15% 15%, white 0, transparent 35%), radial-gradient(circle at 85% 75%, white 0, transparent 40%)",
+          }}
+        />
+
+        <div className="relative flex items-center gap-3">
+          <div className="rounded-lg bg-white p-2 shadow-lg">
+            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={110} height={54} priority className="block" />
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-4 rounded-lg border border-border bg-card p-6 shadow-sm">
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="username">Usuário</Label>
-            <Input
-              id="username"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
-              required
-            />
-          </div>
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="password">Senha</Label>
-            <Input
-              id="password"
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete="current-password"
-              required
-            />
+        <div className="relative flex flex-col gap-8">
+          <div>
+            <p className="text-sm font-medium uppercase tracking-wider text-white/60">BIOGREEN SYSTEM</p>
+            <h1 className="mt-2 max-w-md text-3xl font-semibold leading-tight">
+              O segundo cérebro da Biogreen — tudo o que a empresa faz, num só lugar.
+            </h1>
           </div>
 
-          {error && <p className="text-sm text-destructive">{error}</p>}
+          <ul className="flex flex-col gap-3">
+            {DESTAQUES.map((d) => (
+              <li key={d} className="flex items-start gap-3 text-sm text-white/85">
+                <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-primary" />
+                {d}
+              </li>
+            ))}
+          </ul>
+        </div>
 
-          <Button type="submit" disabled={loading}>
-            {loading ? "Entrando..." : "Entrar"}
-          </Button>
-        </form>
+        <p className="relative text-xs text-white/50">
+          Biogreen Indústria Química Ltda · Suzano/SP
+          <br />
+          desenvolvido por GB Company
+        </p>
+      </div>
 
-        <p className="mt-6 text-center text-xs text-muted-foreground">desenvolvido por GB Company</p>
+      {/* Formulário */}
+      <div className="flex flex-1 items-center justify-center px-4 py-12">
+        <div className="w-full max-w-sm">
+          <div className="mb-8 flex flex-col gap-1 lg:hidden">
+            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={130} height={63} priority className="mb-3" />
+          </div>
+
+          <div className="mb-8">
+            <h2 className="text-xl font-semibold">Entrar</h2>
+            <p className="mt-1 text-sm text-muted-foreground">Acesse com seu usuário e senha da Biogreen.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="username">Usuário</Label>
+              <Input
+                id="username"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
+                autoComplete="username"
+                autoFocus
+                required
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="password">Senha</Label>
+              <Input
+                id="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </div>
+
+            {error && (
+              <p className="rounded-md bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>
+            )}
+
+            <Button type="submit" disabled={loading} className="mt-1 h-11">
+              {loading ? "Entrando..." : "Entrar"}
+            </Button>
+          </form>
+
+          <p className="mt-10 text-center text-xs text-muted-foreground lg:hidden">desenvolvido por GB Company</p>
+        </div>
       </div>
     </div>
   );
