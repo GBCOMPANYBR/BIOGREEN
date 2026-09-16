@@ -42,7 +42,7 @@ async function main() {
     create: { empresaId: empresa.id, nome: "Matriz Suzano", endereco: empresa.endereco, principal: true },
   });
 
-  const setorNomes = ["Diretoria", "Comercial", "Assistência Técnica", "Produção", "Qualidade", "Financeiro"];
+  const setorNomes = ["Diretoria", "Comercial", "Compras", "Assistência Técnica", "Produção", "Qualidade", "Logística", "Financeiro"];
   const setores: Record<string, { id: number }> = {};
   for (const nome of setorNomes) {
     setores[nome] = await prisma.setor.upsert({
@@ -72,6 +72,31 @@ async function main() {
     update: {},
     create: { setorId: setores["Financeiro"].id, nome: "Analista Financeiro" },
   });
+  const cargoComprador = await prisma.cargo.upsert({
+    where: { setorId_nome: { setorId: setores["Compras"].id, nome: "Comprador" } },
+    update: {},
+    create: { setorId: setores["Compras"].id, nome: "Comprador" },
+  });
+  const cargoLiderProducao = await prisma.cargo.upsert({
+    where: { setorId_nome: { setorId: setores["Produção"].id, nome: "Líder de Produção" } },
+    update: {},
+    create: { setorId: setores["Produção"].id, nome: "Líder de Produção" },
+  });
+  const cargoLaboratorio = await prisma.cargo.upsert({
+    where: { setorId_nome: { setorId: setores["Qualidade"].id, nome: "Analista de Laboratório" } },
+    update: {},
+    create: { setorId: setores["Qualidade"].id, nome: "Analista de Laboratório" },
+  });
+  const cargoLogistica = await prisma.cargo.upsert({
+    where: { setorId_nome: { setorId: setores["Logística"].id, nome: "Analista de Logística" } },
+    update: {},
+    create: { setorId: setores["Logística"].id, nome: "Analista de Logística" },
+  });
+  const cargoFaturamento = await prisma.cargo.upsert({
+    where: { setorId_nome: { setorId: setores["Financeiro"].id, nome: "Faturamento" } },
+    update: {},
+    create: { setorId: setores["Financeiro"].id, nome: "Faturamento" },
+  });
 
   // Permissões granulares de exemplo (o Diretor não precisa — usa superAdmin).
   for (const r of RECURSOS.filter((r) => r.modulo === "Comercial" || r.chave === "nucleo.cadastros" || r.chave === "tecnica.visitas")) {
@@ -100,6 +125,43 @@ async function main() {
         podeEditar: true,
         podeAprovar: r.chave.startsWith("financeiro"),
       },
+    });
+  }
+
+  // Cargos do fluxo real repassado pela Karol (pedido -> produção -> laudo -> nota -> expedição).
+  for (const r of RECURSOS.filter((r) => r.chave === "comercial.pedidos" || r.chave === "nucleo.cadastros")) {
+    await prisma.permissao.upsert({
+      where: { cargoId_recurso: { cargoId: cargoComprador.id, recurso: r.chave } },
+      update: {},
+      create: { cargoId: cargoComprador.id, recurso: r.chave, podeVer: true, podeCriar: true, podeAprovar: r.chave === "comercial.pedidos" },
+    });
+  }
+  for (const r of RECURSOS.filter((r) => r.chave === "producao.ordens" || r.chave === "producao.formulas" || r.chave === "producao.lotes" || r.chave === "estoque.movimentos")) {
+    await prisma.permissao.upsert({
+      where: { cargoId_recurso: { cargoId: cargoLiderProducao.id, recurso: r.chave } },
+      update: {},
+      create: { cargoId: cargoLiderProducao.id, recurso: r.chave, podeVer: true, podeCriar: true, podeEditar: true },
+    });
+  }
+  for (const r of RECURSOS.filter((r) => r.modulo === "Qualidade")) {
+    await prisma.permissao.upsert({
+      where: { cargoId_recurso: { cargoId: cargoLaboratorio.id, recurso: r.chave } },
+      update: {},
+      create: { cargoId: cargoLaboratorio.id, recurso: r.chave, podeVer: true, podeCriar: true, podeEditar: true },
+    });
+  }
+  for (const r of RECURSOS.filter((r) => r.chave === "logistica.expedicao" || r.chave === "estoque.movimentos")) {
+    await prisma.permissao.upsert({
+      where: { cargoId_recurso: { cargoId: cargoLogistica.id, recurso: r.chave } },
+      update: {},
+      create: { cargoId: cargoLogistica.id, recurso: r.chave, podeVer: true, podeCriar: true, podeEditar: true },
+    });
+  }
+  for (const r of RECURSOS.filter((r) => r.chave === "fiscal.notas" || r.chave === "financeiro.contasReceber")) {
+    await prisma.permissao.upsert({
+      where: { cargoId_recurso: { cargoId: cargoFaturamento.id, recurso: r.chave } },
+      update: {},
+      create: { cargoId: cargoFaturamento.id, recurso: r.chave, podeVer: true, podeCriar: true },
     });
   }
 
@@ -155,6 +217,69 @@ async function main() {
       username: "financeiro1",
       passwordHash: senhaInicial,
       cargoId: cargoFinanceiro.id,
+    },
+  });
+
+  // Time do processo real repassado pela Karol (Financeiro/Faturamento) — cada um loga e faz
+  // exatamente a etapa que já faz hoje manualmente, só que dentro do sistema.
+  const joseHigor = await prisma.usuario.upsert({
+    where: { username: "jose.higor" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      nome: "José Higor",
+      email: "jose.higor@biogreenquimica.com.br",
+      username: "jose.higor",
+      passwordHash: senhaInicial,
+      cargoId: cargoComprador.id,
+    },
+  });
+  const anderson = await prisma.usuario.upsert({
+    where: { username: "anderson" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      nome: "Anderson",
+      email: "anderson@biogreenquimica.com.br",
+      username: "anderson",
+      passwordHash: senhaInicial,
+      cargoId: cargoLiderProducao.id,
+    },
+  });
+  const beatriz = await prisma.usuario.upsert({
+    where: { username: "beatriz" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      nome: "Beatriz",
+      email: "beatriz@biogreenquimica.com.br",
+      username: "beatriz",
+      passwordHash: senhaInicial,
+      cargoId: cargoLaboratorio.id,
+    },
+  });
+  const larissa = await prisma.usuario.upsert({
+    where: { username: "larissa" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      nome: "Larissa",
+      email: "larissa@biogreenquimica.com.br",
+      username: "larissa",
+      passwordHash: senhaInicial,
+      cargoId: cargoLogistica.id,
+    },
+  });
+  const karoline = await prisma.usuario.upsert({
+    where: { username: "karoline" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      nome: "Karoline",
+      email: "karoline@biogreenquimica.com.br",
+      username: "karoline",
+      passwordHash: senhaInicial,
+      cargoId: cargoFaturamento.id,
     },
   });
 
@@ -294,6 +419,16 @@ async function main() {
     update: {},
     create: { codigo: "MP-003", nome: "Óxido de Magnésio", unidadeMedidaId: kg.id, fornecedorPadraoId: fornecedorNacional.id, custoMedio: 6.9, estoqueMinimo: 400 },
   });
+  const mpSoda = await prisma.materiaPrima.upsert({
+    where: { codigo: "MP-004" },
+    update: {},
+    create: { codigo: "MP-004", nome: "Soda", unidadeMedidaId: kg.id, fornecedorPadraoId: fornecedorNacional.id, custoMedio: 4.2, estoqueMinimo: 2000 },
+  });
+  const mpEnxofre = await prisma.materiaPrima.upsert({
+    where: { codigo: "MP-005" },
+    update: {},
+    create: { codigo: "MP-005", nome: "Enxofre", unidadeMedidaId: kg.id, fornecedorPadraoId: fornecedorNacional.id, custoMedio: 3.1, estoqueMinimo: 500 },
+  });
 
   const produtoAkd = await prisma.produto.upsert({
     where: { codigoInterno: "BG-AKD-200" },
@@ -370,11 +505,30 @@ async function main() {
     },
   });
 
+  // Produto real repassado pela Karol: Biopac, feito de 80% soda + 20% enxofre.
+  const produtoBiopac = await prisma.produto.upsert({
+    where: { codigoInterno: "BIOPAC" },
+    update: {},
+    create: {
+      empresaId: empresa.id,
+      codigoInterno: "BIOPAC",
+      nomeComercial: "Biopac",
+      familia: "Coagulantes",
+      forma: "PO",
+      ncm: "3824.99.89",
+      origem: "FABRICADO",
+      segmento: "TRATAMENTO_AGUA",
+      unidadeMedidaId: kg.id,
+      precoBase: 7.5,
+    },
+  });
+
   await prisma.tabelaPreco.createMany({
     data: [
       { produtoId: produtoAkd.id, clienteId: clienteCelutec.id, preco: 14.5, vigenciaInicio: daysFromNow(-60) },
       { produtoId: produtoDisperse.id, clienteId: clienteAmazonia.id, preco: 10.9, vigenciaInicio: daysFromNow(-60) },
       { produtoId: produtoMixHidroclean.id, clienteId: clienteHidroclean.id, preco: 9.8, vigenciaInicio: daysFromNow(-30) },
+      { produtoId: produtoBiopac.id, clienteId: clienteHidroclean.id, preco: 7.5, vigenciaInicio: daysFromNow(-30) },
     ],
     skipDuplicates: true,
   });
@@ -539,6 +693,26 @@ async function main() {
     },
   });
 
+  // Fórmula real do Biopac: rendimento de 100kg, sempre 80% soda + 20% enxofre — a produção
+  // usa essa proporção pra calcular a baixa automática de matéria-prima, qualquer que seja o
+  // tamanho do lote pedido (ex.: pedido de 1050kg -> 840kg soda + 210kg enxofre, sozinho).
+  const formulaBiopac = await prisma.formula.create({
+    data: {
+      produtoId: produtoBiopac.id,
+      versao: 1,
+      rendimento: 100,
+      tempoMinutos: 45,
+      epi: "Luvas, óculos de proteção, máscara PFF2",
+      instrucoes: "Misturar soda e enxofre nas proporções da fórmula sob agitação controlada.",
+      itens: {
+        create: [
+          { materiaPrimaId: mpSoda.id, quantidade: 80, ordem: 1 },
+          { materiaPrimaId: mpEnxofre.id, quantidade: 20, ordem: 2 },
+        ],
+      },
+    },
+  });
+
   const reator1 = await prisma.equipamento.create({ data: { nome: "Reator 01", tipo: "REATOR", capacidade: 2000 } });
   await prisma.equipamento.create({ data: { nome: "Misturador 01", tipo: "MISTURADOR", capacidade: 1000 } });
 
@@ -644,6 +818,8 @@ async function main() {
       { localEstoqueId: almoxarifadoMp.id, materiaPrimaId: mpPoliamina.id, tipo: "SAIDA", quantidade: 120, motivo: "Consumo OP-2026-0001" },
       { localEstoqueId: produtoAcabado.id, produtoId: produtoAkd.id, loteId: loteComCoa.id, tipo: "ENTRADA", quantidade: 985, motivo: "Produção OP-2026-0001" },
       { localEstoqueId: produtoAcabado.id, produtoId: produtoDisperse.id, tipo: "SAIDA", quantidade: 800, motivo: "Faturamento PV-2026-0002" },
+      { localEstoqueId: almoxarifadoMp.id, materiaPrimaId: mpSoda.id, tipo: "ENTRADA", quantidade: 5000, motivo: "Estoque inicial — Soda" },
+      { localEstoqueId: almoxarifadoMp.id, materiaPrimaId: mpEnxofre.id, tipo: "ENTRADA", quantidade: 2000, motivo: "Estoque inicial — Enxofre" },
     ],
   });
 

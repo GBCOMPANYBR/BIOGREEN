@@ -19,7 +19,9 @@ Decisões ambíguas (de negócio ou técnicas) encontradas durante o desenvolvim
 | 11 | Quais produtos são "controlados" (Polícia Federal/Exército) e prazos de licença vigentes | Núcleo/Qualidade | Campo "produto controlado" existe, nenhum produto marcado até confirmação | docs/PLANO.md §5 |
 | 12 | WhatsApp Business API: Biogreen já tem BSP contratado ou GB Company deve indicar? | Integrações | Notificação por e-mail como canal único até definição | docs/PLANO.md §5 |
 | 13 | Biogreen opera como unidade única hoje, ou já há filiais/CDs exigindo multi-unidade desde a Fase 0? | Núcleo | Unidade única, mas schema já suporta múltiplas unidades por empresa | docs/PLANO.md §5 |
+| 14 | Cadastro de ativos/patrimônio (equipamentos, com fornecedor, data de aquisição, valor, localização, depreciação?) — hoje a Karol/Igor rastreiam manualmente "no nome do fornecedor", sem confiabilidade pra levantamento. Precisa depreciação contábil ou só controle físico simples? | Compras/Financeiro | Nenhum cadastro de patrimônio ainda — `Equipamento` no schema hoje é só pra reator/misturador de produção, não serve pra isso | Áudio da Karol, 2026-09-16 |
 
 ## Respondidas
 
-_(nenhuma ainda)_
+- **"Compramos soda, mas na hora de faturar o sistema não reconhece porque a nota do fornecedor vem com outro nome — estoque zera"** (Karol, 2026-09-16): resolvido por desenho do sistema. Toda entrada de estoque aponta para um `materiaPrimaId` do cadastro único (Núcleo) — não existe campo de texto livre copiando o nome do fornecedor. Quem lança a entrada sempre seleciona da lista cadastrada, nunca digita.
+- **"Tudo que compramos (até sabonete/detergente) sobe pro estoque de venda, misturado com matéria-prima"** (Karol, 2026-09-16): resolvido por desenho do sistema. Só existem cadastros de `Produto` e `MateriaPrima` — o que não é matéria-prima/produto de venda não tem onde "virar estoque"; uma compra de uso e consumo interno vira só lançamento de despesa no Financeiro.

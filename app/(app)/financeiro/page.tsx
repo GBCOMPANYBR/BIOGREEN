@@ -1,24 +1,70 @@
-import { Wallet } from "lucide-react";
 import { requireModuleAccess } from "@/lib/nav-visibility";
-import { PlaceholderModule } from "@/components/layout/placeholder-module";
+import { prisma } from "@/lib/prisma";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import { formatCurrencyBRL, formatDate } from "@/lib/format";
+
+const STATUS_LABEL: Record<string, string> = {
+  ABERTO: "Aberto",
+  PARCIAL: "Parcial",
+  PAGO: "Pago",
+  VENCIDO: "Vencido",
+  CANCELADO: "Cancelado",
+};
 
 export default async function FinanceiroPage() {
   await requireModuleAccess("financeiro.contasReceber");
+
+  const contas = await prisma.contaReceber.findMany({
+    orderBy: { vencimento: "asc" },
+    include: { cliente: true },
+  });
+
   return (
-    <PlaceholderModule
-      titulo="Financeiro"
-      icon={Wallet}
-      fase={2}
-      descricao="Caixa, contas e margem — visíveis em tempo real, sem esperar o fim do mês. Substitui o Conta Azul."
-      funcionalidades={[
-        "Contas a receber e a pagar geradas automaticamente pelos outros módulos",
-        "Conciliação bancária por importação de OFX",
-        "Boletos e PIX via API bancária, com régua de cobrança automática",
-        "Fluxo de caixa realizado e projetado (30/60/90 dias) e DRE gerencial por segmento e por cliente",
-        "Margem por produto e por lote, curva ABC de clientes e produtos",
-        "Aprovação por alçada para pagamentos acima de um valor configurável",
-        "Importador de clientes, fornecedores, títulos e plano de contas vindos do Conta Azul",
-      ]}
-    />
+    <div className="flex flex-col gap-6">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight">Financeiro — Contas a Receber</h1>
+        <p className="mt-1 text-sm text-muted-foreground">
+          Cada título aqui nasceu sozinho quando uma nota fiscal foi emitida em Fiscal — ninguém lançou à mão.
+        </p>
+      </div>
+
+      <Card>
+        <CardContent className="p-0">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Cliente</TableHead>
+                <TableHead>Valor</TableHead>
+                <TableHead>Vencimento</TableHead>
+                <TableHead>Status</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {contas.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.cliente.razaoSocial}</TableCell>
+                  <TableCell>{formatCurrencyBRL(Number(c.valor))}</TableCell>
+                  <TableCell className="text-xs text-muted-foreground">{formatDate(c.vencimento)}</TableCell>
+                  <TableCell>
+                    <Badge variant={c.status === "PAGO" ? "default" : c.status === "VENCIDO" ? "destructive" : "outline"}>
+                      {STATUS_LABEL[c.status]}
+                    </Badge>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {contas.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-sm text-muted-foreground">
+                    Nenhum título gerado ainda.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </CardContent>
+      </Card>
+    </div>
   );
 }
