@@ -20,6 +20,8 @@ Decisões ambíguas (de negócio ou técnicas) encontradas durante o desenvolvim
 | 12 | WhatsApp Business API: Biogreen já tem BSP contratado ou GB Company deve indicar? | Integrações | Notificação por e-mail como canal único até definição | docs/PLANO.md §5 |
 | 13 | Biogreen opera como unidade única hoje, ou já há filiais/CDs exigindo multi-unidade desde a Fase 0? | Núcleo | Unidade única, mas schema já suporta múltiplas unidades por empresa | docs/PLANO.md §5 |
 | 14 | Cadastro de ativos/patrimônio (equipamentos, com fornecedor, data de aquisição, valor, localização, depreciação?) — hoje a Karol/Igor rastreiam manualmente "no nome do fornecedor", sem confiabilidade pra levantamento. Precisa depreciação contábil ou só controle físico simples? | Compras/Financeiro | Nenhum cadastro de patrimônio ainda — `Equipamento` no schema hoje é só pra reator/misturador de produção, não serve pra isso | Áudio da Karol, 2026-09-16 |
+| 15 | Código interno de ativos e de produtos — a Karol mencionou um código ("N...", trecho do áudio pouco claro) que usam hoje. Confirmar formato exato antes de decidir se o `codigoInterno`/`codigo` já seguidos no cadastro batem com o padrão deles ou se precisa migrar. | Núcleo | Segue com o formato livre atual (`codigoInterno` string) até a Karol confirmar o padrão deles | Áudio da Karol, 2026-09-16 |
+| 16 | Histórico de alteração de preço por produto, visível na tela do produto (hoje só dá pra ver via nota fiscal emitida no MAXCONT, não no cadastro) | Núcleo/Comercial | O schema já suporta isso — `TabelaPreco` tem `vigenciaInicio`/`vigenciaFim`, cada mudança de preço vira uma linha nova sem apagar a anterior — falta só uma tela mostrando essa linha do tempo | Áudio da Karol, 2026-09-16 |
 
 ## Respondidas
 
