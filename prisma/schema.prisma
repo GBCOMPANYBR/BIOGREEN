@@ -981,10 +981,19 @@ model NotaFiscalEntrada {
   fornecedorId   Int
   fornecedor     Fornecedor   @relation(fields: [fornecedorId], references: [id])
   numero         String
+  serie          String?
   chaveAcesso    String?      @unique
+  dataEmissao    DateTime?
+  valorTotal     Decimal?     @db.Decimal(18, 2)
+  /// Itens lidos do XML, só pra exibição/conferência (descrição, NCM, unidade, quantidade,
+  /// valores) — não vira EstoqueMovimento sozinho. José Higor decide item a item se aquilo é
+  /// matéria-prima de verdade ou só uma compra de uso/consumo (ver docs/PERGUNTAS.md).
+  itensJson      Json?
   xmlUrl         String?
   manifestacao   String       @default("PENDENTE")
   createdAt      DateTime     @default(now())
+
+  contaPagar ContaPagar?
 }
 
 model ConfiguracaoFiscal {
@@ -1068,6 +1077,8 @@ model ContaPagar {
   fornecedor     Fornecedor    @relation(fields: [fornecedorId], references: [id])
   pedidoCompraId Int?
   pedidoCompra   PedidoCompra? @relation(fields: [pedidoCompraId], references: [id])
+  notaFiscalEntradaId Int?     @unique
+  notaFiscalEntrada   NotaFiscalEntrada? @relation(fields: [notaFiscalEntradaId], references: [id])
   planoContasId  Int?
   planoContas    PlanoContas?  @relation(fields: [planoContasId], references: [id])
   valor          Decimal       @db.Decimal(18, 2)

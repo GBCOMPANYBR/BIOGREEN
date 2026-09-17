@@ -940,6 +940,24 @@ async function main() {
   const planoReceita = await prisma.planoContas.create({ data: { codigo: "1.1", nome: "Receita de Vendas", tipo: "RECEITA", centroCustoId: centroComercial.id } });
   const planoDespesaMp = await prisma.planoContas.create({ data: { codigo: "2.1", nome: "Compra de Matéria-Prima", tipo: "DESPESA", centroCustoId: centroProducao.id } });
 
+  // Centros de custo reais que o José Higor (Compras) usa hoje no Conta Azul pra categorizar
+  // toda entrada de NF — cada um vira um PlanoContas de despesa pra virar Conta a Pagar.
+  const categoriasCompras = [
+    "CAPEX",
+    "Copa e Cozinha",
+    "Produção/Manutenção",
+    "Escritório",
+    "Construção de Imóvel",
+    "Manutenção Predial",
+    "Manutenção Preventiva",
+  ];
+  let codigoDespesa = 2001;
+  for (const nome of categoriasCompras) {
+    const cc = await prisma.centroCusto.create({ data: { nome } });
+    await prisma.planoContas.create({ data: { codigo: `2.${codigoDespesa}`, nome: `Despesas — ${nome}`, tipo: "DESPESA", centroCustoId: cc.id } });
+    codigoDespesa++;
+  }
+
   const valorNfAmazonia = 800 * 10.9;
   await prisma.contaReceber.create({
     data: {

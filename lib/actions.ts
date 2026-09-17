@@ -6,6 +6,7 @@ import { getCurrentUser, can } from "@/lib/permissions";
 import { saveAttachmentFile } from "@/lib/storage";
 import { calcularParcelas } from "@/lib/parcelas";
 import { lerPontosDoFormData, lerHidrometrosDoFormData } from "@/lib/relatorio-visita";
+import { parseNfeXml } from "@/lib/nfe-parser";
 import type { Acao } from "@/lib/recursos";
 
 async function requireAction(recurso: string, acao: Acao) {
@@ -676,4 +677,155 @@ export async function registrarRelatorioVisita(formData: FormData) {
 
   revalidatePath("/tecnica");
   revalidatePath("/");
+}
+
+export async function importarNfeEntrada(formData: FormData) {
+  const user = await requireAction("compras.pedidos", "podeCriar");
+
+  const arquivo = formData.get("xml");
+  if (!(arquivo instanceof File) || arquivo.size === 0) throw new Error("Selecione o arquivo XML da NF-e.");
+
+  const xmlTexto = await arquivo.text();
+  const nfe = parseNfeXml(xmlTexto);
+  if (!nfe.fornecedorCnpj || !nfe.numero) throw new Error("Não consegui ler fornecedor/número da NF-e nesse XML.");
+
+  let fornecedor = await prisma.fornecedor.findUnique({ where: { cnpjCpf: nfe.fornecedorCnpj } });
+  if (!fornecedor) {
+    fornecedor = await prisma.fornecedor.create({
+      data: {
+        empresaId: (await prisma.empresa.findFirstOrThrow()).id,
+        razaoSocial: nfe.fornecedorNome || nfe.fornecedorCnpj,
+        cnpjCpf: nfe.fornecedorCnpj,
+        pais: "Brasil",
+        createdById: user.id,
+      },
+    });
+  }
+
+  const itensJson = nfe.itens.map((i) => ({ ...i, lancadoComoMateriaPrima: false, materiaPrimaId: null }));
+
+  const nfEntrada = await prisma.notaFiscalEntrada.create({
+    data: {
+      fornecedorId: fornecedor.id,
+      numero: nfe.numero,
+      serie: nfe.serie || null,
+      chaveAcesso: nfe.chaveAcesso,
+      dataEmissao: nfe.dataEmissao,
+      valorTotal: nfe.valorTotal,
+      itensJson,
+    },
+  });
+
+  const bytes = Buffer.from(xmlTexto, "utf-8");
+  const xmlUrl = await saveAttachmentFile("NotaFiscalEntrada", nfEntrada.id, arquivo.name, bytes);
+  await prisma.notaFiscalEntrada.update({ where: { id: nfEntrada.id }, data: { xmlUrl } });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "NotaFiscalEntrada", entidadeId: nfEntrada.id, acao: "importou XML de" },
+  });
+
+  revalidatePath("/compras");
+}
+
+export async function categorizarNotaFiscalEntrada(formData: FormData) {
+  const user = await requireAction("compras.pedidos", "podeCriar");
+
+  const notaFiscalEntradaId = Number(formData.get("notaFiscalEntradaId"));
+  const planoContasId = Number(formData.get("planoContasId"));
+  const vencimentoRaw = formData.get("vencimento") as string;
+  if (!planoContasId || !vencimentoRaw) throw new Error("Escolha o centro de custo e o vencimento.");
+
+  const nf = await prisma.notaFiscalEntrada.findUniqueOrThrow({ where: { id: notaFiscalEntradaId }, include: { contaPagar: true } });
+  if (nf.contaPagar) return;
+
+  await prisma.contaPagar.create({
+    data: {
+      fornecedorId: nf.fornecedorId,
+      notaFiscalEntradaId: nf.id,
+      planoContasId,
+      valor: nf.valorTotal ?? 0,
+      valorPago: 0,
+      vencimento: new Date(`${vencimentoRaw}T12:00:00`),
+      status: "ABERTO",
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "NotaFiscalEntrada", entidadeId: nf.id, acao: "categorizou e lançou conta a pagar de" },
+  });
+
+  revalidatePath("/compras");
+  revalidatePath("/financeiro");
+}
+
+interface ItemNfArmazenado {
+  descricao: string;
+  ncm?: string;
+  unidade: string;
+  quantidade: number;
+  valorUnitario: number;
+  valorTotal: number;
+  lancadoComoMateriaPrima: boolean;
+  materiaPrimaId: number | null;
+}
+
+export async function darEntradaItemComoMateriaPrima(formData: FormData) {
+  const user = await requireAction("estoque.materiasPrimas", "podeCriar");
+
+  const notaFiscalEntradaId = Number(formData.get("notaFiscalEntradaId"));
+  const itemIndex = Number(formData.get("itemIndex"));
+  // "nova" cadastra uma matéria-prima nova com o nome exato da nota; qualquer outro valor é o
+  // id de uma matéria-prima JÁ cadastrada — nunca casamos por nome sozinhos: é sempre o Igor
+  // quem escolhe, pra "SODA CAUSTICA" da nota sempre virar a mesma "Soda" do cadastro, não uma
+  // segunda entrada (era exatamente esse o problema que a Karol descreveu no Conta Azul).
+  const escolha = formData.get("materiaPrimaId") as string;
+
+  const nf = await prisma.notaFiscalEntrada.findUniqueOrThrow({ where: { id: notaFiscalEntradaId } });
+  const itens = (nf.itensJson as unknown as ItemNfArmazenado[]) ?? [];
+  const item = itens[itemIndex];
+  if (!item || item.lancadoComoMateriaPrima || !escolha) return;
+
+  let materiaPrima;
+  if (escolha === "nova") {
+    const siglaUnidade = item.unidade.toUpperCase() === "KG" ? "kg" : item.unidade.toLowerCase();
+    let unidade = await prisma.unidadeMedida.findUnique({ where: { sigla: siglaUnidade } });
+    if (!unidade) {
+      unidade = await prisma.unidadeMedida.create({ data: { sigla: siglaUnidade, nome: item.unidade } });
+    }
+    const contagem = await prisma.materiaPrima.count();
+    materiaPrima = await prisma.materiaPrima.create({
+      data: {
+        codigo: `MP-${String(contagem + 1).padStart(4, "0")}`,
+        nome: item.descricao,
+        unidadeMedidaId: unidade.id,
+        fornecedorPadraoId: nf.fornecedorId,
+      },
+    });
+  } else {
+    materiaPrima = await prisma.materiaPrima.findUniqueOrThrow({ where: { id: Number(escolha) } });
+  }
+
+  const almoxarifado = await prisma.localEstoque.findFirst({ where: { tipo: "ALMOXARIFADO_MP" } });
+  if (almoxarifado) {
+    await prisma.estoqueMovimento.create({
+      data: {
+        localEstoqueId: almoxarifado.id,
+        materiaPrimaId: materiaPrima.id,
+        tipo: "ENTRADA",
+        quantidade: item.quantidade,
+        motivo: `NF ${nf.numero} — entrada de item`,
+        createdById: user.id,
+      },
+    });
+  }
+
+  itens[itemIndex] = { ...item, lancadoComoMateriaPrima: true, materiaPrimaId: materiaPrima.id };
+  await prisma.notaFiscalEntrada.update({ where: { id: nf.id }, data: { itensJson: JSON.parse(JSON.stringify(itens)) } });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "MateriaPrima", entidadeId: materiaPrima.id, acao: `deu entrada via NF ${nf.numero} de` },
+  });
+
+  revalidatePath("/compras");
+  revalidatePath("/estoque");
 }
