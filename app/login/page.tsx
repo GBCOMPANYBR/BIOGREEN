@@ -3,7 +3,7 @@
 import { useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -17,6 +17,7 @@ const DESTAQUES = [
 export default function LoginPage() {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
+  const [mostrarSenha, setMostrarSenha] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
@@ -57,9 +58,14 @@ export default function LoginPage() {
         />
 
         <div className="relative flex items-center gap-3">
-          <div className="rounded-lg bg-white p-2 shadow-lg">
-            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={110} height={54} priority className="block" />
-          </div>
+          <Image
+            src="/logo-biogreen.png"
+            alt="Biogreen"
+            width={140}
+            height={68}
+            priority
+            className="h-auto w-full max-w-[140px]"
+          />
         </div>
 
         <div className="relative flex flex-col gap-8">
@@ -91,7 +97,7 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
-            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={130} height={63} priority className="mb-3" />
+            <Image src="/logo-biogreen.png" alt="Biogreen" width={130} height={63} priority className="mb-3 h-auto w-full max-w-[130px]" />
           </div>
 
           <div className="mb-8">
@@ -113,14 +119,26 @@ export default function LoginPage() {
             </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="password">Senha</Label>
-              <Input
-                id="password"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-                required
-              />
+              <div className="relative">
+                <Input
+                  id="password"
+                  type={mostrarSenha ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  required
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setMostrarSenha((v) => !v)}
+                  className="absolute inset-y-0 right-0 flex w-10 items-center justify-center text-muted-foreground hover:text-foreground"
+                  aria-label={mostrarSenha ? "Esconder senha" : "Mostrar senha"}
+                  tabIndex={-1}
+                >
+                  {mostrarSenha ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
             </div>
 
             {error && (

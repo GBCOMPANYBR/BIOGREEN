@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import { ChevronsLeft, ChevronsRight, Leaf } from "lucide-react";
@@ -20,8 +21,11 @@ export function Sidebar({ visibleSlugs }: { visibleSlugs: string[] }) {
       )}
     >
       <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
-        <Leaf className="h-5 w-5 shrink-0 text-primary" />
-        {!collapsed && <span className="truncate text-sm font-semibold">BIOGREEN SYSTEM</span>}
+        {collapsed ? (
+          <Leaf className="h-5 w-5 shrink-0 text-primary" />
+        ) : (
+          <Image src="/logo-biogreen.png" alt="Biogreen" width={132} height={64} className="h-auto w-full max-w-[130px]" priority />
+        )}
       </div>
 
       <nav className="flex-1 overflow-y-auto p-2">
