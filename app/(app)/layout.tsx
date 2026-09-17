@@ -6,6 +6,7 @@ import { Shell } from "@/components/layout/shell";
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
+  if (user.deveTrocarSenha) redirect("/trocar-senha");
 
   const visibleSlugs = getVisibleSlugs(user);
 

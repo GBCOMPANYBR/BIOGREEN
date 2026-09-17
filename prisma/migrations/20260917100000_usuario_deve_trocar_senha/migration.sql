@@ -1,0 +1,3 @@
+-- AlterTable
+ALTER TABLE "Usuario" ADD COLUMN     "deveTrocarSenha" BOOLEAN NOT NULL DEFAULT false;
+

@@ -7,7 +7,8 @@ import { saveAttachmentFile } from "@/lib/storage";
 import { calcularParcelas } from "@/lib/parcelas";
 import { lerPontosDoFormData, lerHidrometrosDoFormData } from "@/lib/relatorio-visita";
 import { parseNfeXml } from "@/lib/nfe-parser";
-import type { Acao } from "@/lib/recursos";
+import { gerarSenhaAleatoria, hashPassword, verifyPassword } from "@/lib/auth";
+import { RECURSOS, type Acao } from "@/lib/recursos";
 
 async function requireAction(recurso: string, acao: Acao) {
   const user = await getCurrentUser();
@@ -32,13 +33,27 @@ export async function criarPedido(formData: FormData) {
   const user = await requireAction("comercial.pedidos", "podeCriar");
 
   const clienteId = Number(formData.get("clienteId"));
-  const produtoId = Number(formData.get("produtoId"));
-  const quantidade = Number(formData.get("quantidade"));
-  const precoUnitario = Number(formData.get("precoUnitario"));
+  if (!clienteId) throw new Error("Selecione o cliente.");
 
-  if (!clienteId || !produtoId || !quantidade || !precoUnitario) {
-    throw new Error("Preencha cliente, produto, quantidade e preço.");
+  // Um pedido pode ter mais de um produto — José Higor adiciona linhas com "Adicionar
+  // produto" antes de registrar; os 3 campos de cada linha compartilham o mesmo `name`,
+  // então getAll() devolve um array por campo, na mesma ordem em que as linhas aparecem no DOM.
+  const produtoIds = formData.getAll("produtoId").map(Number);
+  const quantidades = formData.getAll("quantidade").map(Number);
+  const precos = formData.getAll("precoUnitario").map(Number);
+
+  if (produtoIds.length === 0) throw new Error("Adicione ao menos um produto ao pedido.");
+  const itens = produtoIds.map((produtoId, i) => ({ produtoId, quantidade: quantidades[i], precoUnitario: precos[i] }));
+  if (itens.some((it) => !it.produtoId || !it.quantidade || !it.precoUnitario)) {
+    throw new Error("Preencha produto, quantidade e preço em todas as linhas do pedido.");
   }
+
+  // CIF/FOB (quem entrega) e data de saída — sinalizam pra Larissa (Logística) se ela precisa
+  // cotar frete e até quando. Só "CIF" (Biogreen entrega) aparece na fila de fretes a cotar;
+  // "FOB" é o cliente retirando, não tem frete da Biogreen.
+  const freteTipo = (formData.get("freteTipo") as string) || null;
+  const dataPrometidaRaw = formData.get("dataPrometida") as string;
+  const dataPrometida = dataPrometidaRaw ? new Date(`${dataPrometidaRaw}T12:00:00`) : null;
 
   const contagem = await prisma.pedidoVenda.count();
   const numero = numeroSequencial("PV", contagem);
@@ -49,8 +64,10 @@ export async function criarPedido(formData: FormData) {
       numero,
       status: "PENDENTE",
       condicaoPagamento: (formData.get("condicaoPagamento") as string) || null,
+      freteTipo,
+      dataPrometida,
       createdById: user.id,
-      itens: { create: [{ produtoId, quantidade, precoUnitario }] },
+      itens: { create: itens },
     },
   });
 
@@ -364,7 +381,7 @@ export async function gerarExpedicao(pedidoId: number) {
   const agora = new Date();
 
   await prisma.expedicao.create({
-    data: { pedidoVendaId: pedido.id, status: "EXPEDIDO", dataAgendamento: agora },
+    data: { pedidoVendaId: pedido.id, status: "SEPARACAO", dataAgendamento: agora },
   });
 
   if (local) {
@@ -479,15 +496,21 @@ export async function baixarAtivo(ativoId: number) {
   revalidatePath("/ativos");
 }
 
+const STATUS_EXPEDICAO_VALIDOS = ["SEPARACAO", "CONFERIDO", "EXPEDIDO", "ENTREGUE"] as const;
+
 export async function atualizarExpedicao(formData: FormData) {
   const user = await requireAction("logistica.expedicao", "podeEditar");
 
   const expedicaoId = Number(formData.get("expedicaoId"));
   const valorFreteRaw = formData.get("valorFrete");
   const valorFrete = valorFreteRaw && valorFreteRaw !== "" ? Number(valorFreteRaw) : undefined;
+  const statusRaw = formData.get("status");
+  const status = STATUS_EXPEDICAO_VALIDOS.includes(statusRaw as (typeof STATUS_EXPEDICAO_VALIDOS)[number])
+    ? (statusRaw as (typeof STATUS_EXPEDICAO_VALIDOS)[number])
+    : undefined;
 
-  if (valorFrete !== undefined) {
-    await prisma.expedicao.update({ where: { id: expedicaoId }, data: { valorFrete } });
+  if (valorFrete !== undefined || status !== undefined) {
+    await prisma.expedicao.update({ where: { id: expedicaoId }, data: { ...(valorFrete !== undefined && { valorFrete }), ...(status && { status }) } });
   }
 
   const arquivo = formData.get("arquivo");
@@ -512,7 +535,12 @@ export async function atualizarExpedicao(formData: FormData) {
       usuarioId: user.id,
       entidade: "Expedicao",
       entidadeId: expedicaoId,
-      acao: arquivo instanceof File && arquivo.size > 0 ? "anexou canhoto/NF em" : "atualizou frete de",
+      acao:
+        arquivo instanceof File && arquivo.size > 0
+          ? "anexou canhoto/NF em"
+          : status
+            ? `avançou status para ${status} de`
+            : "atualizou frete de",
     },
   });
 
@@ -738,6 +766,10 @@ export async function categorizarNotaFiscalEntrada(formData: FormData) {
   const nf = await prisma.notaFiscalEntrada.findUniqueOrThrow({ where: { id: notaFiscalEntradaId }, include: { contaPagar: true } });
   if (nf.contaPagar) return;
 
+  // CIF (fornecedor entrega) ou FOB (Biogreen busca) — só "FOB" entra na fila de coletas da
+  // Larissa; sinalizado aqui porque é o momento em que José Higor "lança" a compra de verdade.
+  const tipoFrete = (formData.get("tipoFrete") as string) || null;
+
   await prisma.contaPagar.create({
     data: {
       fornecedorId: nf.fornecedorId,
@@ -750,12 +782,15 @@ export async function categorizarNotaFiscalEntrada(formData: FormData) {
     },
   });
 
+  await prisma.notaFiscalEntrada.update({ where: { id: nf.id }, data: { tipoFrete } });
+
   await prisma.auditLog.create({
     data: { usuarioId: user.id, entidade: "NotaFiscalEntrada", entidadeId: nf.id, acao: "categorizou e lançou conta a pagar de" },
   });
 
   revalidatePath("/compras");
   revalidatePath("/financeiro");
+  revalidatePath("/logistica");
 }
 
 interface ItemNfArmazenado {
@@ -828,4 +863,394 @@ export async function darEntradaItemComoMateriaPrima(formData: FormData) {
 
   revalidatePath("/compras");
   revalidatePath("/estoque");
+}
+
+// ============================================================
+// NÚCLEO — Cadastros mestres (Clientes, Produtos) e Usuários
+// ============================================================
+
+const SEGMENTOS = ["PAPEL_CARTAO", "CELULOSE", "TRATAMENTO_AGUA"] as const;
+const FORMAS_PRODUTO = ["PO", "EMULSAO", "LIQUIDO", "GEL", "OUTRO"] as const;
+const ORIGENS_PRODUTO = ["FABRICADO", "REVENDIDO", "MISTURA_CUSTOMIZADA"] as const;
+
+function validarEnum<T extends string>(valores: readonly T[], valor: FormDataEntryValue | null, campo: string): T {
+  if (typeof valor !== "string" || !valores.includes(valor as T)) throw new Error(`Valor inválido para ${campo}.`);
+  return valor as T;
+}
+
+export async function criarCliente(formData: FormData) {
+  const user = await requireAction("nucleo.cadastros", "podeCriar");
+
+  const razaoSocial = (formData.get("razaoSocial") as string)?.trim();
+  const cnpjCpf = (formData.get("cnpjCpf") as string)?.trim();
+  if (!razaoSocial || !cnpjCpf) throw new Error("Preencha razão social e CNPJ/CPF.");
+  const segmento = validarEnum(SEGMENTOS, formData.get("segmento"), "segmento");
+
+  const existente = await prisma.cliente.findUnique({ where: { cnpjCpf } });
+  if (existente) throw new Error("Já existe um cliente cadastrado com esse CNPJ/CPF.");
+
+  const vendedorId = formData.get("vendedorId") ? Number(formData.get("vendedorId")) : null;
+  const tecnicoId = formData.get("tecnicoId") ? Number(formData.get("tecnicoId")) : null;
+  const empresa = await prisma.empresa.findFirstOrThrow();
+
+  const cliente = await prisma.cliente.create({
+    data: {
+      empresaId: empresa.id,
+      razaoSocial,
+      nomeFantasia: (formData.get("nomeFantasia") as string) || null,
+      cnpjCpf,
+      segmento,
+      condicoesComerciais: (formData.get("condicoesComerciais") as string) || null,
+      vendedorId,
+      tecnicoId,
+      createdById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Cliente", entidadeId: cliente.id, acao: "cadastrou" } });
+  revalidatePath("/nucleo");
+}
+
+export async function atualizarCliente(formData: FormData) {
+  const user = await requireAction("nucleo.cadastros", "podeEditar");
+
+  const id = Number(formData.get("clienteId"));
+  const razaoSocial = (formData.get("razaoSocial") as string)?.trim();
+  const cnpjCpf = (formData.get("cnpjCpf") as string)?.trim();
+  if (!razaoSocial || !cnpjCpf) throw new Error("Preencha razão social e CNPJ/CPF.");
+  const segmento = validarEnum(SEGMENTOS, formData.get("segmento"), "segmento");
+
+  const duplicado = await prisma.cliente.findUnique({ where: { cnpjCpf } });
+  if (duplicado && duplicado.id !== id) throw new Error("Já existe outro cliente cadastrado com esse CNPJ/CPF.");
+
+  const vendedorId = formData.get("vendedorId") ? Number(formData.get("vendedorId")) : null;
+  const tecnicoId = formData.get("tecnicoId") ? Number(formData.get("tecnicoId")) : null;
+
+  await prisma.cliente.update({
+    where: { id },
+    data: {
+      razaoSocial,
+      nomeFantasia: (formData.get("nomeFantasia") as string) || null,
+      cnpjCpf,
+      segmento,
+      condicoesComerciais: (formData.get("condicoesComerciais") as string) || null,
+      vendedorId,
+      tecnicoId,
+      ativo: formData.get("ativo") === "on",
+      updatedById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Cliente", entidadeId: id, acao: "editou" } });
+  revalidatePath("/nucleo");
+}
+
+export async function excluirCliente(clienteId: number) {
+  const user = await requireAction("nucleo.cadastros", "podeExcluir");
+
+  await prisma.cliente.update({ where: { id: clienteId }, data: { deletedAt: new Date(), ativo: false } });
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Cliente", entidadeId: clienteId, acao: "excluiu" } });
+  revalidatePath("/nucleo");
+}
+
+export async function criarProduto(formData: FormData) {
+  const user = await requireAction("nucleo.cadastros", "podeCriar");
+
+  const codigoInterno = (formData.get("codigoInterno") as string)?.trim();
+  const nomeComercial = (formData.get("nomeComercial") as string)?.trim();
+  const unidadeMedidaId = Number(formData.get("unidadeMedidaId"));
+  if (!codigoInterno || !nomeComercial || !unidadeMedidaId) throw new Error("Preencha código, nome comercial e unidade de medida.");
+  const segmento = validarEnum(SEGMENTOS, formData.get("segmento"), "segmento");
+  const forma = validarEnum(FORMAS_PRODUTO, formData.get("forma"), "forma");
+  const origem = validarEnum(ORIGENS_PRODUTO, formData.get("origem"), "origem");
+
+  const existente = await prisma.produto.findUnique({ where: { codigoInterno } });
+  if (existente) throw new Error("Já existe um produto cadastrado com esse código interno.");
+
+  const precoBase = formData.get("precoBase") ? Number(formData.get("precoBase")) : null;
+  const empresa = await prisma.empresa.findFirstOrThrow();
+
+  const produto = await prisma.produto.create({
+    data: {
+      empresaId: empresa.id,
+      codigoInterno,
+      nomeComercial,
+      familia: (formData.get("familia") as string) || null,
+      forma,
+      origem,
+      segmento,
+      unidadeMedidaId,
+      precoBase,
+      createdById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Produto", entidadeId: produto.id, acao: "cadastrou" } });
+  revalidatePath("/nucleo");
+}
+
+export async function atualizarProduto(formData: FormData) {
+  const user = await requireAction("nucleo.cadastros", "podeEditar");
+
+  const id = Number(formData.get("produtoId"));
+  const codigoInterno = (formData.get("codigoInterno") as string)?.trim();
+  const nomeComercial = (formData.get("nomeComercial") as string)?.trim();
+  const unidadeMedidaId = Number(formData.get("unidadeMedidaId"));
+  if (!codigoInterno || !nomeComercial || !unidadeMedidaId) throw new Error("Preencha código, nome comercial e unidade de medida.");
+  const segmento = validarEnum(SEGMENTOS, formData.get("segmento"), "segmento");
+  const forma = validarEnum(FORMAS_PRODUTO, formData.get("forma"), "forma");
+  const origem = validarEnum(ORIGENS_PRODUTO, formData.get("origem"), "origem");
+
+  const duplicado = await prisma.produto.findUnique({ where: { codigoInterno } });
+  if (duplicado && duplicado.id !== id) throw new Error("Já existe outro produto cadastrado com esse código interno.");
+
+  const precoBase = formData.get("precoBase") ? Number(formData.get("precoBase")) : null;
+
+  await prisma.produto.update({
+    where: { id },
+    data: {
+      codigoInterno,
+      nomeComercial,
+      familia: (formData.get("familia") as string) || null,
+      forma,
+      origem,
+      segmento,
+      unidadeMedidaId,
+      precoBase,
+      ativo: formData.get("ativo") === "on",
+      updatedById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Produto", entidadeId: id, acao: "editou" } });
+  revalidatePath("/nucleo");
+}
+
+export async function excluirProduto(produtoId: number) {
+  const user = await requireAction("nucleo.cadastros", "podeExcluir");
+
+  await prisma.produto.update({ where: { id: produtoId }, data: { deletedAt: new Date(), ativo: false } });
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Produto", entidadeId: produtoId, acao: "excluiu" } });
+  revalidatePath("/nucleo");
+}
+
+export interface ResultadoSenhaGerada {
+  senhaGerada: string;
+  usuarioNome: string;
+}
+
+/** Chamada direto do client (não via `<form action>`) pra poder devolver a senha gerada
+ * pra tela — este projeto está em React 18, sem useActionState, então o componente client
+ * invoca esta função com `await` dentro de um `startTransition` e mostra o retorno. */
+export async function criarUsuario(formData: FormData): Promise<ResultadoSenhaGerada> {
+  const user = await requireAction("nucleo.usuarios", "podeCriar");
+
+  const nome = (formData.get("nome") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
+  const username = (formData.get("username") as string)?.trim().toLowerCase();
+  if (!nome || !email || !username) throw new Error("Preencha nome, e-mail e usuário.");
+
+  const existente = await prisma.usuario.findFirst({ where: { OR: [{ email }, { username }] } });
+  if (existente) throw new Error("Já existe um usuário com esse e-mail ou nome de usuário.");
+
+  const cargoId = formData.get("cargoId") ? Number(formData.get("cargoId")) : null;
+  const empresa = await prisma.empresa.findFirstOrThrow();
+  const senhaGerada = gerarSenhaAleatoria();
+  const passwordHash = await hashPassword(senhaGerada);
+
+  const novoUsuario = await prisma.usuario.create({
+    data: { empresaId: empresa.id, nome, email, username, passwordHash, cargoId, deveTrocarSenha: true },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Usuario", entidadeId: novoUsuario.id, acao: "cadastrou" } });
+  revalidatePath("/nucleo");
+
+  return { senhaGerada, usuarioNome: novoUsuario.nome };
+}
+
+export async function atualizarUsuario(formData: FormData) {
+  const user = await requireAction("nucleo.usuarios", "podeEditar");
+
+  const id = Number(formData.get("usuarioId"));
+  const nome = (formData.get("nome") as string)?.trim();
+  const email = (formData.get("email") as string)?.trim().toLowerCase();
+  const username = (formData.get("username") as string)?.trim().toLowerCase();
+  if (!nome || !email || !username) throw new Error("Preencha nome, e-mail e usuário.");
+
+  const duplicado = await prisma.usuario.findFirst({ where: { OR: [{ email }, { username }], NOT: { id } } });
+  if (duplicado) throw new Error("Já existe outro usuário com esse e-mail ou nome de usuário.");
+
+  const cargoId = formData.get("cargoId") ? Number(formData.get("cargoId")) : null;
+
+  await prisma.usuario.update({
+    where: { id },
+    data: { nome, email, username, cargoId, ativo: formData.get("ativo") === "on" },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Usuario", entidadeId: id, acao: "editou" } });
+  revalidatePath("/nucleo");
+}
+
+export async function excluirUsuario(usuarioId: number) {
+  const user = await requireAction("nucleo.usuarios", "podeExcluir");
+  if (usuarioId === user.id) throw new Error("Você não pode excluir o seu próprio usuário.");
+
+  await prisma.usuario.update({ where: { id: usuarioId }, data: { deletedAt: new Date(), ativo: false } });
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Usuario", entidadeId: usuarioId, acao: "excluiu" } });
+  revalidatePath("/nucleo");
+}
+
+export async function criarCargo(formData: FormData) {
+  const user = await requireAction("nucleo.usuarios", "podeCriar");
+
+  const nome = (formData.get("nome") as string)?.trim();
+  const setorId = Number(formData.get("setorId"));
+  if (!nome || !setorId) throw new Error("Preencha o nome do cargo e o setor.");
+
+  const existente = await prisma.cargo.findUnique({ where: { setorId_nome: { setorId, nome } } });
+  if (existente) throw new Error("Já existe um cargo com esse nome nesse setor.");
+
+  const cargo = await prisma.cargo.create({ data: { setorId, nome } });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Cargo", entidadeId: cargo.id, acao: "cadastrou" } });
+  revalidatePath("/nucleo");
+}
+
+const ACOES: Acao[] = ["podeVer", "podeCriar", "podeEditar", "podeAprovar", "podeExcluir"];
+
+/** Salva a matriz inteira de permissões de um cargo de uma vez — um checkbox por
+ * recurso × ação (nome `${recurso}__${acao}`). Ausente no FormData = desmarcado = false;
+ * cada recurso sempre grava as 5 ações explicitamente, então a matriz enviada é sempre
+ * o estado final completo do cargo, não um diff. */
+export async function salvarPermissoesCargo(formData: FormData) {
+  const user = await requireAction("nucleo.usuarios", "podeEditar");
+
+  const cargoId = Number(formData.get("cargoId"));
+  if (!cargoId) throw new Error("Selecione um cargo.");
+  await prisma.cargo.findUniqueOrThrow({ where: { id: cargoId } });
+
+  await prisma.$transaction(
+    RECURSOS.map((r) => {
+      const valores = Object.fromEntries(ACOES.map((acao) => [acao, formData.get(`${r.chave}__${acao}`) === "on"])) as Record<Acao, boolean>;
+      return prisma.permissao.upsert({
+        where: { cargoId_recurso: { cargoId, recurso: r.chave } },
+        update: valores,
+        create: { cargoId, recurso: r.chave, ...valores },
+      });
+    })
+  );
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Cargo", entidadeId: cargoId, acao: "atualizou permissões de" } });
+  revalidatePath("/nucleo");
+}
+
+/** Reset administrativo — gera senha nova e força troca no próximo login. Mesma lógica de
+ * retorno de criarUsuario: chamada direto do client pra poder mostrar a senha uma vez. */
+export async function redefinirSenhaUsuario(usuarioId: number): Promise<ResultadoSenhaGerada> {
+  const user = await requireAction("nucleo.usuarios", "podeEditar");
+
+  const senhaGerada = gerarSenhaAleatoria();
+  const passwordHash = await hashPassword(senhaGerada);
+  const alvo = await prisma.usuario.update({
+    where: { id: usuarioId },
+    data: { passwordHash, deveTrocarSenha: true },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Usuario", entidadeId: usuarioId, acao: "redefiniu a senha de" } });
+  revalidatePath("/nucleo");
+
+  return { senhaGerada, usuarioNome: alvo.nome };
+}
+
+/** Autoatendimento — usado tanto na troca forçada (deveTrocarSenha) quanto por qualquer
+ * usuário trocando a senha por vontade própria. Não chama redirect() aqui de propósito: quem
+ * chama é um Client Component via `await` direto (não `<form action>`), e misturar redirect()
+ * com essa forma de chamada arrisca o navigator engolir o sinal de redirect como erro comum —
+ * a navegação pra "/" fica por conta do client, depois de um retorno sem erro. */
+export async function trocarSenha(formData: FormData): Promise<void> {
+  const authUser = await getCurrentUser();
+  if (!authUser) throw new Error("Não autenticado.");
+
+  const senhaAtual = formData.get("senhaAtual") as string;
+  const novaSenha = formData.get("novaSenha") as string;
+  const confirmarSenha = formData.get("confirmarSenha") as string;
+  if (!senhaAtual || !novaSenha || !confirmarSenha) throw new Error("Preencha todos os campos.");
+  if (novaSenha.length < 8) throw new Error("A nova senha precisa ter pelo menos 8 caracteres.");
+  if (novaSenha !== confirmarSenha) throw new Error("A confirmação não bate com a nova senha.");
+
+  const registro = await prisma.usuario.findUniqueOrThrow({ where: { id: authUser.id } });
+  const valido = await verifyPassword(senhaAtual, registro.passwordHash);
+  if (!valido) throw new Error("Senha atual incorreta.");
+
+  const passwordHash = await hashPassword(novaSenha);
+  await prisma.usuario.update({ where: { id: authUser.id }, data: { passwordHash, deveTrocarSenha: false } });
+}
+
+// ============================================================
+// LOGÍSTICA — Cotação e acompanhamento de frete (Larissa)
+// ============================================================
+
+/** Primeira cotação de um frete — nasce vinculado a um PedidoVenda (ENTREGA, Biogreen até o
+ * cliente, freteTipo "CIF") ou a uma NotaFiscalEntrada (COLETA, fornecedor até a Biogreen,
+ * tipoFrete "FOB"). Sempre cria uma linha nova: recotar é um evento novo, não um overwrite. */
+export async function cotarFrete(formData: FormData) {
+  const user = await requireAction("logistica.expedicao", "podeCriar");
+
+  const pedidoVendaId = formData.get("pedidoVendaId") ? Number(formData.get("pedidoVendaId")) : null;
+  const notaFiscalEntradaId = formData.get("notaFiscalEntradaId") ? Number(formData.get("notaFiscalEntradaId")) : null;
+  if (!pedidoVendaId && !notaFiscalEntradaId) throw new Error("Frete precisa estar vinculado a um pedido ou a uma compra.");
+
+  const transportadora = (formData.get("transportadora") as string)?.trim();
+  if (!transportadora) throw new Error("Informe a transportadora.");
+
+  const valorFrete = formData.get("valorFrete") ? Number(formData.get("valorFrete")) : null;
+  const dataFreteRaw = formData.get("dataFrete") as string;
+  const dataFrete = dataFreteRaw ? new Date(`${dataFreteRaw}T12:00:00`) : null;
+
+  await prisma.frete.create({
+    data: {
+      tipo: pedidoVendaId ? "ENTREGA" : "COLETA",
+      pedidoVendaId,
+      notaFiscalEntradaId,
+      transportadora,
+      valorFrete,
+      dataFrete,
+      observacoes: (formData.get("observacoes") as string) || null,
+      status: "COTADO",
+      createdById: user.id,
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: {
+      usuarioId: user.id,
+      entidade: pedidoVendaId ? "PedidoVenda" : "NotaFiscalEntrada",
+      entidadeId: (pedidoVendaId ?? notaFiscalEntradaId)!,
+      acao: "cotou frete de",
+    },
+  });
+
+  revalidatePath("/logistica");
+}
+
+/** Ajusta uma cotação existente e/ou avança o status até a entrega (COTADO -> EM_TRANSITO -> ENTREGUE). */
+export async function atualizarFrete(formData: FormData) {
+  const user = await requireAction("logistica.expedicao", "podeEditar");
+
+  const id = Number(formData.get("freteId"));
+  const transportadora = (formData.get("transportadora") as string)?.trim();
+  if (!transportadora) throw new Error("Informe a transportadora.");
+
+  const valorFrete = formData.get("valorFrete") ? Number(formData.get("valorFrete")) : null;
+  const dataFreteRaw = formData.get("dataFrete") as string;
+  const dataFrete = dataFreteRaw ? new Date(`${dataFreteRaw}T12:00:00`) : null;
+  const status = (formData.get("status") as string) || "COTADO";
+
+  await prisma.frete.update({
+    where: { id },
+    data: { transportadora, valorFrete, dataFrete, observacoes: (formData.get("observacoes") as string) || null, status },
+  });
+
+  await prisma.auditLog.create({ data: { usuarioId: user.id, entidade: "Frete", entidadeId: id, acao: "atualizou frete" } });
+  revalidatePath("/logistica");
 }

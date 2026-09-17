@@ -20,11 +20,13 @@ export function Sidebar({ visibleSlugs }: { visibleSlugs: string[] }) {
         collapsed ? "w-16" : "w-64"
       )}
     >
-      <div className="flex h-14 items-center gap-2 border-b border-sidebar-border px-4">
+      <div className="flex h-14 items-center justify-center gap-2 border-b border-sidebar-border px-4">
         {collapsed ? (
           <Leaf className="h-5 w-5 shrink-0 text-primary" />
         ) : (
-          <Image src="/logo-biogreen.png" alt="Biogreen" width={132} height={64} className="h-auto w-full max-w-[130px]" priority />
+          <div className="flex items-center rounded-md bg-white px-2 py-1.5 shadow-sm">
+            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={104} height={50} className="h-8 w-auto" priority />
+          </div>
         )}
       </div>
 

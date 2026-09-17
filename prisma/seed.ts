@@ -136,20 +136,20 @@ async function main() {
       r.chave === "comercial.pedidos" ||
       r.chave === "nucleo.cadastros" ||
       r.chave === "patrimonio.ativos" ||
-      r.chave === "estoque.materiasPrimas"
+      r.chave === "estoque.materiasPrimas" ||
+      r.chave === "compras.pedidos"
   )) {
+    const permissaoComprador = {
+      podeVer: true,
+      podeCriar: true,
+      podeEditar: r.chave === "estoque.materiasPrimas",
+      podeExcluir: r.chave === "estoque.materiasPrimas",
+      podeAprovar: r.chave === "comercial.pedidos",
+    };
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoComprador.id, recurso: r.chave } },
-      update: {},
-      create: {
-        cargoId: cargoComprador.id,
-        recurso: r.chave,
-        podeVer: true,
-        podeCriar: true,
-        podeEditar: r.chave === "estoque.materiasPrimas",
-        podeExcluir: r.chave === "estoque.materiasPrimas",
-        podeAprovar: r.chave === "comercial.pedidos",
-      },
+      update: permissaoComprador,
+      create: { cargoId: cargoComprador.id, recurso: r.chave, ...permissaoComprador },
     });
   }
   for (const r of RECURSOS.filter(
@@ -161,10 +161,13 @@ async function main() {
       r.chave === "estoque.movimentos" ||
       r.chave === "estoque.materiasPrimas"
   )) {
+    // Anderson (Líder de Produção) é quem libera a produção pro chão de fábrica — precisa de
+    // podeAprovar em producao.formulas pra rodar o aprovarPCP (baixa automática de matéria-prima).
+    const permissaoLiderProducao = { podeVer: true, podeCriar: true, podeEditar: true, podeAprovar: r.chave === "producao.formulas" };
     await prisma.permissao.upsert({
       where: { cargoId_recurso: { cargoId: cargoLiderProducao.id, recurso: r.chave } },
-      update: {},
-      create: { cargoId: cargoLiderProducao.id, recurso: r.chave, podeVer: true, podeCriar: true, podeEditar: true },
+      update: permissaoLiderProducao,
+      create: { cargoId: cargoLiderProducao.id, recurso: r.chave, ...permissaoLiderProducao },
     });
   }
   for (const r of RECURSOS.filter((r) => r.modulo === "Qualidade")) {

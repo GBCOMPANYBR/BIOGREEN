@@ -57,15 +57,17 @@ export default function LoginPage() {
           }}
         />
 
-        <div className="relative flex items-center gap-3">
-          <Image
-            src="/logo-biogreen.png"
-            alt="Biogreen"
-            width={140}
-            height={68}
-            priority
-            className="h-auto w-full max-w-[140px]"
-          />
+        <div className="relative flex items-center justify-center">
+          <div className="rounded-xl bg-white p-5 shadow-lg">
+            <Image
+              src="/logo-biogreen.jpg"
+              alt="Biogreen"
+              width={720}
+              height={350}
+              priority
+              className="h-auto w-full max-w-[720px]"
+            />
+          </div>
         </div>
 
         <div className="relative flex flex-col gap-8">
@@ -97,7 +99,7 @@ export default function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-4 py-12">
         <div className="w-full max-w-sm">
           <div className="mb-8 flex flex-col gap-1 lg:hidden">
-            <Image src="/logo-biogreen.png" alt="Biogreen" width={130} height={63} priority className="mb-3 h-auto w-full max-w-[130px]" />
+            <Image src="/logo-biogreen.jpg" alt="Biogreen" width={130} height={63} priority className="mb-3 h-auto w-full max-w-[130px]" />
           </div>
 
           <div className="mb-8">

@@ -33,3 +33,17 @@ export const STATUS_PEDIDO_BADGE: Record<string, "default" | "secondary" | "acce
   EXPEDIDO: "default",
   CANCELADO: "destructive",
 };
+
+export const STATUS_EXPEDICAO_LABEL: Record<string, string> = {
+  SEPARACAO: "Separação",
+  CONFERIDO: "Conferido",
+  EXPEDIDO: "Expedido",
+  ENTREGUE: "Entregue",
+};
+
+export const STATUS_EXPEDICAO_BADGE: Record<string, "default" | "secondary" | "accent" | "outline" | "destructive"> = {
+  SEPARACAO: "outline",
+  CONFERIDO: "secondary",
+  EXPEDIDO: "accent",
+  ENTREGUE: "default",
+};

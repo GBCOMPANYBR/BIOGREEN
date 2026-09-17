@@ -87,11 +87,14 @@ export default async function ComprasPage() {
                   {nf.dataEmissao ? formatDate(nf.dataEmissao) : "—"} · {formatCurrencyBRL(Number(nf.valorTotal ?? 0))}
                 </p>
               </div>
-              {nf.contaPagar ? (
-                <Badge>{nf.contaPagar.planoContas?.nome.replace("Despesas — ", "") ?? "Categorizada"}</Badge>
-              ) : (
-                <Badge variant="secondary">Aguardando categorização</Badge>
-              )}
+              <div className="flex items-center gap-2">
+                {nf.tipoFrete && <Badge variant="outline">{nf.tipoFrete}</Badge>}
+                {nf.contaPagar ? (
+                  <Badge>{nf.contaPagar.planoContas?.nome.replace("Despesas — ", "") ?? "Categorizada"}</Badge>
+                ) : (
+                  <Badge variant="secondary">Aguardando categorização</Badge>
+                )}
+              </div>
             </CardHeader>
             <CardContent className="flex flex-col gap-4">
               {itens.length > 0 && (
@@ -167,6 +170,14 @@ export default async function ComprasPage() {
                   <div className="flex flex-col gap-1.5">
                     <Label className="text-xs text-muted-foreground">Vencimento</Label>
                     <Input name="vencimento" type="date" required />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label className="text-xs text-muted-foreground">Frete</Label>
+                    <select name="tipoFrete" className="flex h-10 w-full rounded-md border border-input bg-background px-2 text-sm">
+                      <option value="">—</option>
+                      <option value="CIF">CIF — fornecedor entrega</option>
+                      <option value="FOB">FOB — Biogreen busca</option>
+                    </select>
                   </div>
                   <Button type="submit" variant="accent">
                     Lançar conta a pagar

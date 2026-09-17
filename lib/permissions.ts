@@ -11,6 +11,7 @@ export interface AuthedUser {
   username: string;
   superAdmin: boolean;
   ativo: boolean;
+  deveTrocarSenha: boolean;
   cargoId: number | null;
   /** recurso -> ações permitidas, já resolvido (vazio para superAdmin, que passa em tudo). */
   permissoes: Map<string, Set<Acao>>;
@@ -49,6 +50,7 @@ export async function getCurrentUser(): Promise<AuthedUser | null> {
     username: record.username,
     superAdmin: record.superAdmin,
     ativo: record.ativo,
+    deveTrocarSenha: record.deveTrocarSenha,
     cargoId: record.cargoId,
     permissoes,
   };

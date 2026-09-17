@@ -1,5 +1,6 @@
 import { SignJWT, jwtVerify } from "jose";
 import bcrypt from "bcryptjs";
+import { randomBytes } from "crypto";
 import { cookies } from "next/headers";
 
 export const SESSION_COOKIE = "biogreen_session";
@@ -23,6 +24,17 @@ export async function hashPassword(password: string): Promise<string> {
 
 export async function verifyPassword(password: string, hash: string): Promise<boolean> {
   return bcrypt.compare(password, hash);
+}
+
+// Sem 0/O/1/I/l — evita confusão na hora de digitar uma senha gerada de cadastro/reset.
+const ALFABETO_SENHA = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789";
+
+/** Senha temporária pra um usuário novo ou um reset — sempre combinada com `deveTrocarSenha: true`. */
+export function gerarSenhaAleatoria(tamanho = 10): string {
+  const bytes = randomBytes(tamanho);
+  let senha = "";
+  for (let i = 0; i < tamanho; i++) senha += ALFABETO_SENHA[bytes[i] % ALFABETO_SENHA.length];
+  return senha;
 }
 
 export async function signSessionToken(payload: SessionPayload): Promise<string> {

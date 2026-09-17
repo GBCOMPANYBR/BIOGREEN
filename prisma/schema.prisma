@@ -114,6 +114,9 @@ model Usuario {
   /// Bypassa o RBAC granular — reservado para o bootstrap inicial e para a diretoria/TI.
   superAdmin       Boolean   @default(false)
   ativo            Boolean   @default(true)
+  /// true quando a senha foi definida pelo sistema (cadastro novo ou reset) — força a troca
+  /// no próximo login antes de liberar o resto do app.
+  deveTrocarSenha  Boolean   @default(false)
   twoFactorEnabled Boolean   @default(false)
   twoFactorSecret  String?
   ultimoLoginEm    DateTime?
@@ -487,6 +490,7 @@ model PedidoVenda {
   notasFiscais   NotaFiscal[]
   expedicao      Expedicao?
   comissoes      Comissao[]
+  fretes         Frete[]
 }
 
 model PedidoVendaItem {
@@ -991,9 +995,13 @@ model NotaFiscalEntrada {
   itensJson      Json?
   xmlUrl         String?
   manifestacao   String       @default("PENDENTE")
+  /// "CIF" (fornecedor entrega) | "FOB" (Biogreen busca) — sinaliza pra Larissa (Logística) se
+  /// essa compra precisa de coleta. Mesmo vocabulário livre do PedidoVenda.freteTipo.
+  tipoFrete      String?
   createdAt      DateTime     @default(now())
 
   contaPagar ContaPagar?
+  fretes     Frete[]
 }
 
 model ConfiguracaoFiscal {
@@ -1188,6 +1196,38 @@ model ExpedicaoVolume {
   etiquetaCodigo  String    @unique
   classificacaoOnu String?
   pesoKg          Decimal?  @db.Decimal(10, 3)
+}
+
+/// Cotação/acompanhamento de frete — as duas pontas que a Larissa cuida: ENTREGA (Biogreen até
+/// o cliente, nasce de um PedidoVenda com freteTipo "CIF") e COLETA (fornecedor até a Biogreen,
+/// nasce de uma NotaFiscalEntrada com tipoFrete "FOB"). Também guarda o histórico importado da
+/// planilha "CONTROLES DE FRETES.xlsx" (linhas antigas sem pedidoVendaId/notaFiscalEntradaId —
+/// são referência de valor por rota, não vínculo com um registro do sistema).
+model Frete {
+  id                   Int      @id @default(autoincrement())
+  tipo                 String   // "COLETA" | "ENTREGA" | "OUTRO" (diária, deslocamento — do histórico)
+  pedidoVendaId        Int?
+  pedidoVenda          PedidoVenda? @relation(fields: [pedidoVendaId], references: [id])
+  notaFiscalEntradaId  Int?
+  notaFiscalEntrada    NotaFiscalEntrada? @relation(fields: [notaFiscalEntradaId], references: [id])
+  local                String?
+  transportadora       String?
+  tipoCarroceria       String?
+  quantidadeKg         Decimal? @db.Decimal(18, 3)
+  descricaoItens       String?
+  notasFiscais         String?
+  dataFrete            DateTime?
+  valorFrete           Decimal? @db.Decimal(18, 2)
+  centroCusto          String?
+  observacoes          String?
+  /// "AGUARDANDO_COTACAO" | "COTADO" | "EM_TRANSITO" | "ENTREGUE" — histórico importado entra
+  /// direto como ENTREGUE (já aconteceu); vocabulário livre, mesmo padrão de Ativo.status.
+  status               String   @default("AGUARDANDO_COTACAO")
+  createdById          Int?
+  createdAt            DateTime @default(now())
+
+  @@index([pedidoVendaId])
+  @@index([notaFiscalEntradaId])
 }
 
 // ============================================================
