@@ -9,6 +9,14 @@ import { lerPontosDoFormData, lerHidrometrosDoFormData } from "@/lib/relatorio-v
 import { parseNfeXml } from "@/lib/nfe-parser";
 import { gerarSenhaAleatoria, hashPassword, verifyPassword } from "@/lib/auth";
 import { RECURSOS, type Acao } from "@/lib/recursos";
+import { saldosMateriaPrima, verificarDisponibilidade } from "@/lib/estoque";
+
+function mensagemFaltaMateriaPrima(faltas: { materiaPrima: string; necessario: number; saldo: number }[]): string {
+  const linhas = faltas.map(
+    (f) => `${f.materiaPrima} (necessário ${f.necessario.toFixed(2)}, saldo ${f.saldo.toFixed(2)})`
+  );
+  return `Matéria-prima insuficiente para produzir: ${linhas.join("; ")}.`;
+}
 
 async function requireAction(recurso: string, acao: Acao) {
   const user = await getCurrentUser();
@@ -88,6 +96,17 @@ export async function aprovarPedido(pedidoId: number) {
   });
   if (pedido.status !== "PENDENTE") return;
 
+  // Antes de comprometer o pedido com o PCP, confere se há matéria-prima pra produzir
+  // TODOS os itens — não adianta aprovar e travar na etapa seguinte.
+  const faltas: { materiaPrima: string; necessario: number; saldo: number }[] = [];
+  for (const item of pedido.itens) {
+    const disponibilidade = await verificarDisponibilidade(item.produtoId, Number(item.quantidade));
+    for (const d of disponibilidade) {
+      if (!d.suficiente) faltas.push({ materiaPrima: d.materiaPrima, necessario: d.necessario, saldo: d.saldo });
+    }
+  }
+  if (faltas.length > 0) throw new Error(mensagemFaltaMateriaPrima(faltas));
+
   for (const item of pedido.itens) {
     let formula = await prisma.formula.findFirst({
       where: { produtoId: item.produtoId, ativa: true },
@@ -138,7 +157,7 @@ export async function aprovarPCP(formData: FormData) {
   const opId = Number(formData.get("opId"));
   const op = await prisma.ordemProducao.findUniqueOrThrow({
     where: { id: opId },
-    include: { formula: { include: { itens: true } } },
+    include: { formula: { include: { itens: { include: { materiaPrima: true } } } } },
   });
   if (op.status !== "PLANEJADA") return;
 
@@ -180,7 +199,7 @@ export async function aprovarPCP(formData: FormData) {
           }),
         },
       },
-      include: { itens: true },
+      include: { itens: { include: { materiaPrima: true } } },
     });
     await prisma.ordemProducao.update({ where: { id: op.id }, data: { formulaId: formulaFinal.id } });
   }
@@ -188,9 +207,24 @@ export async function aprovarPCP(formData: FormData) {
   // Baixa automática das matérias-primas ao liberar pra produção — proporcional à fórmula
   // final (original ou ajustada pelo PCP), sem ninguém precisar digitar percentual.
   const almoxarifadoMp = await prisma.localEstoque.findFirst({ where: { tipo: "ALMOXARIFADO_MP" } });
-  if (formulaFinal.itens.length > 0 && almoxarifadoMp) {
+  if (!almoxarifadoMp) throw new Error("Almoxarifado de matéria-prima não cadastrado — avise o TI.");
+
+  if (formulaFinal.itens.length > 0) {
     const rendimento = Number(formulaFinal.rendimento ?? 0);
     const fator = rendimento > 0 ? Number(op.quantidadePlanejada) / rendimento : 1;
+
+    // Revalida com a fórmula FINAL (o PCP pode ter alterado quantidades acima) — é a
+    // última linha de defesa antes de baixar estoque de verdade, então bloqueia aqui
+    // mesmo que o Comercial já tenha validado na aprovação do pedido.
+    const saldos = await saldosMateriaPrima(formulaFinal.itens.map((i) => i.materiaPrimaId));
+    const faltas = formulaFinal.itens
+      .map((item) => {
+        const necessario = Number(item.quantidade) * fator;
+        const saldo = saldos.get(item.materiaPrimaId) ?? 0;
+        return { materiaPrima: item.materiaPrima.nome, necessario, saldo, suficiente: saldo >= necessario };
+      })
+      .filter((f) => !f.suficiente);
+    if (faltas.length > 0) throw new Error(mensagemFaltaMateriaPrima(faltas));
 
     for (const item of formulaFinal.itens) {
       await prisma.estoqueMovimento.create({
@@ -365,6 +399,73 @@ export async function gerarNotaFiscal(pedidoId: number) {
   revalidatePath("/fiscal");
   revalidatePath("/comercial");
   revalidatePath("/financeiro");
+  revalidatePath("/");
+}
+
+export async function darBaixaContaReceber(formData: FormData) {
+  const user = await requireAction("financeiro.contasReceber", "podeEditar");
+
+  const contaId = Number(formData.get("contaId"));
+  const valorPagoAgora = Number(formData.get("valor"));
+  const dataBaixaRaw = formData.get("dataBaixa") as string;
+  if (!contaId || !valorPagoAgora || valorPagoAgora <= 0) throw new Error("Informe um valor de baixa válido.");
+
+  const conta = await prisma.contaReceber.findUniqueOrThrow({ where: { id: contaId } });
+  if (conta.status === "PAGO" || conta.status === "CANCELADO") throw new Error("Este título já está encerrado.");
+
+  const novoValorPago = Number(conta.valorPago) + valorPagoAgora;
+  if (novoValorPago > Number(conta.valor) + 0.01) {
+    throw new Error("O valor da baixa não pode ser maior que o saldo em aberto do título.");
+  }
+
+  await prisma.contaReceber.update({
+    where: { id: contaId },
+    data: {
+      valorPago: novoValorPago,
+      dataBaixa: dataBaixaRaw ? new Date(`${dataBaixaRaw}T12:00:00`) : new Date(),
+      status: novoValorPago >= Number(conta.valor) - 0.01 ? "PAGO" : "PARCIAL",
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "ContaReceber", entidadeId: contaId, acao: "deu baixa em" },
+  });
+
+  revalidatePath("/financeiro");
+  revalidatePath("/");
+}
+
+export async function darBaixaContaPagar(formData: FormData) {
+  const user = await requireAction("financeiro.contasPagar", "podeEditar");
+
+  const contaId = Number(formData.get("contaId"));
+  const valorPagoAgora = Number(formData.get("valor"));
+  const dataBaixaRaw = formData.get("dataBaixa") as string;
+  if (!contaId || !valorPagoAgora || valorPagoAgora <= 0) throw new Error("Informe um valor de baixa válido.");
+
+  const conta = await prisma.contaPagar.findUniqueOrThrow({ where: { id: contaId } });
+  if (conta.status === "PAGO" || conta.status === "CANCELADO") throw new Error("Este título já está encerrado.");
+
+  const novoValorPago = Number(conta.valorPago) + valorPagoAgora;
+  if (novoValorPago > Number(conta.valor) + 0.01) {
+    throw new Error("O valor da baixa não pode ser maior que o saldo em aberto do título.");
+  }
+
+  await prisma.contaPagar.update({
+    where: { id: contaId },
+    data: {
+      valorPago: novoValorPago,
+      dataBaixa: dataBaixaRaw ? new Date(`${dataBaixaRaw}T12:00:00`) : new Date(),
+      status: novoValorPago >= Number(conta.valor) - 0.01 ? "PAGO" : "PARCIAL",
+    },
+  });
+
+  await prisma.auditLog.create({
+    data: { usuarioId: user.id, entidade: "ContaPagar", entidadeId: contaId, acao: "deu baixa em" },
+  });
+
+  revalidatePath("/financeiro");
+  revalidatePath("/compras");
   revalidatePath("/");
 }
 

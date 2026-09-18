@@ -9,10 +9,7 @@ import { put, del } from "@vercel/blob";
 // sem depender da nuvem. Mesmo padrão do projeto IMETAL.
 const USE_BLOB = Boolean(process.env.BLOB_READ_WRITE_TOKEN);
 
-const STORAGE_ROOT = path.resolve(
-  process.cwd(),
-  /*turbopackIgnore: true*/ process.env.STORAGE_DIR ?? "./storage/attachments"
-);
+const STORAGE_ROOT = path.join(process.cwd(), "storage", "attachments");
 
 function entidadeDir(entidadeTipo: string, entidadeId: number): string {
   return path.join(/*turbopackIgnore: true*/ STORAGE_ROOT, entidadeTipo, String(entidadeId));
