@@ -8,3 +8,4 @@ storage/attachments
 *.xlsx
 *.log
 .DS_Store
+.env*
