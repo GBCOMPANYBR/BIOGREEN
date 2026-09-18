@@ -91,7 +91,9 @@ export default function LoginPage() {
         <p className="relative text-xs text-white/50">
           Biogreen Indústria Química Ltda · Suzano/SP
           <br />
-          desenvolvido por GB Company
+          <a href="https://gbcompanybr.com.br" target="_blank" rel="noopener noreferrer" className="hover:text-white/80">
+            BY GBCOMPANYBR
+          </a>
         </p>
       </div>
 
@@ -152,7 +154,11 @@ export default function LoginPage() {
             </Button>
           </form>
 
-          <p className="mt-10 text-center text-xs text-muted-foreground lg:hidden">desenvolvido por GB Company</p>
+          <p className="mt-10 text-center text-xs text-muted-foreground lg:hidden">
+            <a href="https://gbcompanybr.com.br" target="_blank" rel="noopener noreferrer" className="hover:text-foreground">
+              BY GBCOMPANYBR
+            </a>
+          </p>
         </div>
       </div>
     </div>

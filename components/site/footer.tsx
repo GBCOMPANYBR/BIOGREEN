@@ -9,6 +9,10 @@ export function SiteFooter() {
         <Image src="/logo-biogreen.png" alt="Biogreen Chemicals" width={140} height={68} className="h-8 w-auto opacity-80" />
         <p className="text-center text-xs text-slate-500 sm:text-right">
           © {ano} Biogreen Indústria Química Ltda. Todos os direitos reservados.
+          {" · "}
+          <a href="https://gbcompanybr.com.br" target="_blank" rel="noopener noreferrer" className="hover:text-slate-700">
+            BY GBCOMPANYBR
+          </a>
         </p>
       </div>
     </footer>
