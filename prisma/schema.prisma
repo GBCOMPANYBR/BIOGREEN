@@ -248,10 +248,16 @@ model Fornecedor {
   razaoSocial String
   nomeFantasia String?
   cnpjCpf     String    @unique
+  inscricaoEstadual String?
   pais        String    @default("Brasil")
   contato     String?
   email       String?
   telefone    String?
+  endereco    String?
+  bairro      String?
+  cidade      String?
+  uf          String?
+  cep         String?
   ativo       Boolean   @default(true)
   createdById Int?
   updatedById Int?
