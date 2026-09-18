@@ -1005,7 +1005,7 @@ export async function darEntradaItemComoMateriaPrima(formData: FormData) {
 // NÚCLEO — Cadastros mestres (Clientes, Produtos) e Usuários
 // ============================================================
 
-const SEGMENTOS = ["PAPEL_CARTAO", "CELULOSE", "TRATAMENTO_AGUA"] as const;
+const SEGMENTOS = ["PAPEL_CARTAO", "CELULOSE", "TRATAMENTO_AGUA", "NAO_CLASSIFICADO"] as const;
 const FORMAS_PRODUTO = ["PO", "EMULSAO", "LIQUIDO", "GEL", "OUTRO"] as const;
 const ORIGENS_PRODUTO = ["FABRICADO", "REVENDIDO", "MISTURA_CUSTOMIZADA"] as const;
 

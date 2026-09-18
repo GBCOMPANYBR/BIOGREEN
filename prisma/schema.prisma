@@ -159,6 +159,8 @@ enum Segmento {
   PAPEL_CARTAO
   CELULOSE
   TRATAMENTO_AGUA
+  /// Importado sem pista suficiente no nome pra classificar automaticamente — revisar manualmente.
+  NAO_CLASSIFICADO
 }
 
 model UnidadeMedida {
@@ -194,6 +196,7 @@ model Cliente {
   razaoSocial        String
   nomeFantasia       String?
   cnpjCpf            String    @unique
+  inscricaoEstadual  String?
   segmento           Segmento
   condicoesComerciais String?
   /// Usado no cabeçalho do laudo (COA) e em documentos de expedição — opcional, muitos

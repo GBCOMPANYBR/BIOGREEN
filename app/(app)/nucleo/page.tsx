@@ -39,6 +39,7 @@ const SEGMENTO_LABEL: Record<string, string> = {
   PAPEL_CARTAO: "Papel e Cartão",
   CELULOSE: "Celulose",
   TRATAMENTO_AGUA: "Tratamento de Água",
+  NAO_CLASSIFICADO: "Não classificado (revisar)",
 };
 const FORMA_LABEL: Record<string, string> = {
   PO: "Pó",

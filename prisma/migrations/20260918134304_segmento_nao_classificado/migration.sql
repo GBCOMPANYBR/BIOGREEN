@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "Segmento" ADD VALUE 'NAO_CLASSIFICADO';
