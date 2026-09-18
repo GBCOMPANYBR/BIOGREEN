@@ -129,6 +129,7 @@ model Usuario {
   oportunidades    Oportunidade[]
   visitasTecnicas  VisitaTecnica[]
   comissoes        Comissao[]
+  coaDocumentosEmitidos CoaDocumento[]
   auditLogs        AuditLog[]
   chatConversas    ChatConversa[]
   tarefas          Tarefa[]
@@ -195,6 +196,13 @@ model Cliente {
   cnpjCpf            String    @unique
   segmento           Segmento
   condicoesComerciais String?
+  /// Usado no cabeçalho do laudo (COA) e em documentos de expedição — opcional, muitos
+  /// clientes cadastrados antigos não têm isso preenchido ainda.
+  endereco           String?
+  bairro             String?
+  cidade             String?
+  uf                 String?
+  cep                String?
   vendedorId         Int?
   vendedor           Usuario?  @relation("ClienteVendedor", fields: [vendedorId], references: [id])
   tecnicoId          Int?
@@ -219,6 +227,7 @@ model Cliente {
   notasFiscais     NotaFiscal[]
   produtosExclusivos Produto[]      @relation("ProdutoClienteExclusivo")
   formulasCustomizadas Formula[]
+  coaDocumentos    CoaDocumento[]
 }
 
 model ClienteContato {
@@ -772,6 +781,9 @@ model Especificacao {
   produtoId Int
   produto   Produto @relation(fields: [produtoId], references: [id])
   parametro String
+  /// Unidade exibida na coluna própria do laudo (ex.: "PH", "cps", "%") — parâmetros
+  /// descritivos (ex.: Aspecto) ficam sem unidade e sem min/máx, e são avaliados por texto.
+  unidade   String?
   minimo    Decimal? @db.Decimal(18, 4)
   maximo    Decimal? @db.Decimal(18, 4)
   metodo    String?
@@ -785,18 +797,27 @@ model AnaliseLote {
   lote            Lote          @relation(fields: [loteId], references: [id])
   especificacaoId Int
   especificacao   Especificacao @relation(fields: [especificacaoId], references: [id])
-  valorMedido     Decimal       @db.Decimal(18, 4)
+  /// Nulo quando o parâmetro é descritivo (ver `resultadoTexto`) — um dos dois sempre vem
+  /// preenchido, nunca os dois.
+  valorMedido     Decimal?      @db.Decimal(18, 4)
+  resultadoTexto  String?
   aprovado        Boolean
   analistaId      Int?
   dataAnalise     DateTime      @default(now())
 }
 
 model CoaDocumento {
-  id        Int      @id @default(autoincrement())
-  loteId    Int
-  lote      Lote     @relation(fields: [loteId], references: [id])
-  pdfUrl    String
-  geradoEm  DateTime @default(now())
+  id           Int      @id @default(autoincrement())
+  loteId       Int
+  lote         Lote     @relation(fields: [loteId], references: [id])
+  /// Um lote pode abastecer vários clientes — o laudo impresso é personalizado por
+  /// destinatário, então guardamos pra qual cliente esta emissão específica foi gerada.
+  clienteId    Int?
+  cliente      Cliente? @relation(fields: [clienteId], references: [id])
+  emitidoPorId Int?
+  emitidoPor   Usuario? @relation(fields: [emitidoPorId], references: [id])
+  pdfUrl       String
+  geradoEm     DateTime @default(now())
 }
 
 enum StatusInspecao {

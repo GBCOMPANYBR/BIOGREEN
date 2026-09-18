@@ -144,6 +144,26 @@ async function ClientesTab({ podeCriar, podeEditar, podeExcluir }: { podeCriar: 
                 <Label htmlFor="condicoesComerciais">Condições comerciais</Label>
                 <Input id="condicoesComerciais" name="condicoesComerciais" placeholder="Ex.: 30/60/90 dias, frete CIF..." />
               </div>
+              <div className="flex flex-col gap-1.5 lg:col-span-2">
+                <Label htmlFor="endereco">Endereço</Label>
+                <Input id="endereco" name="endereco" placeholder="Rua, número" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="bairro">Bairro</Label>
+                <Input id="bairro" name="bairro" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cidade">Cidade</Label>
+                <Input id="cidade" name="cidade" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="uf">UF</Label>
+                <Input id="uf" name="uf" maxLength={2} className="uppercase" />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="cep">CEP</Label>
+                <Input id="cep" name="cep" />
+              </div>
               <div className="flex items-end">
                 <Button type="submit">Cadastrar</Button>
               </div>
@@ -228,6 +248,26 @@ async function ClientesTab({ podeCriar, podeEditar, podeExcluir }: { podeCriar: 
                         <div className="flex flex-col gap-1 sm:col-span-2">
                           <Label className="text-xs text-muted-foreground">Condições comerciais</Label>
                           <Input name="condicoesComerciais" defaultValue={c.condicoesComerciais ?? ""} />
+                        </div>
+                        <div className="flex flex-col gap-1 sm:col-span-2">
+                          <Label className="text-xs text-muted-foreground">Endereço</Label>
+                          <Input name="endereco" defaultValue={c.endereco ?? ""} placeholder="Rua, número" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs text-muted-foreground">Bairro</Label>
+                          <Input name="bairro" defaultValue={c.bairro ?? ""} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs text-muted-foreground">Cidade</Label>
+                          <Input name="cidade" defaultValue={c.cidade ?? ""} />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs text-muted-foreground">UF</Label>
+                          <Input name="uf" defaultValue={c.uf ?? ""} maxLength={2} className="uppercase" />
+                        </div>
+                        <div className="flex flex-col gap-1">
+                          <Label className="text-xs text-muted-foreground">CEP</Label>
+                          <Input name="cep" defaultValue={c.cep ?? ""} />
                         </div>
                         <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
                           <input type="checkbox" name="ativo" defaultChecked={c.ativo} className="h-4 w-4 rounded border-input" />

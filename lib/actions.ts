@@ -515,37 +515,72 @@ export async function gerarExpedicao(pedidoId: number) {
   revalidatePath("/");
 }
 
-export async function emitirLaudo(loteId: number) {
+/** Especificações sem faixa numérica (ex.: Aspecto) são avaliadas por texto — sem "aprovado"
+ * automático, é o analista quem julga visualmente antes de digitar o resultado. */
+function especETexto(esp: { minimo: unknown; maximo: unknown }): boolean {
+  return esp.minimo === null && esp.maximo === null;
+}
+
+export async function emitirLaudo(formData: FormData) {
   const user = await requireAction("qualidade.especificacoes", "podeCriar");
 
-  const lote = await prisma.lote.findUniqueOrThrow({ where: { id: loteId } });
+  const loteId = Number(formData.get("loteId"));
+  const clienteIdInformado = formData.get("clienteId") ? Number(formData.get("clienteId")) : null;
+
+  const lote = await prisma.lote.findUniqueOrThrow({
+    where: { id: loteId },
+    include: { ordemProducao: { include: { pedidoVenda: true } } },
+  });
   const existente = await prisma.coaDocumento.findFirst({ where: { loteId: lote.id } });
   if (existente) return;
 
-  let especificacao = await prisma.especificacao.findFirst({ where: { produtoId: lote.produtoId } });
-  if (!especificacao) {
-    especificacao = await prisma.especificacao.create({
-      data: { produtoId: lote.produtoId, parametro: "Controle de processo", metodo: "Inspeção visual e de processo" },
-    });
+  let especificacoes = await prisma.especificacao.findMany({ where: { produtoId: lote.produtoId } });
+  if (especificacoes.length === 0) {
+    especificacoes = [
+      await prisma.especificacao.create({
+        data: { produtoId: lote.produtoId, parametro: "Controle de processo", metodo: "Inspeção visual e de processo" },
+      }),
+    ];
   }
 
-  await prisma.analiseLote.create({
-    data: {
-      loteId: lote.id,
-      especificacaoId: especificacao.id,
-      valorMedido: 1,
-      aprovado: true,
-      analistaId: user.id,
-      dataAnalise: new Date(),
-    },
+  const analises = especificacoes.map((esp) => {
+    const bruto = (formData.get(`resultado_${esp.id}`) as string | null)?.trim();
+    if (!bruto) throw new Error(`Preencha o resultado de "${esp.parametro}".`);
+
+    if (especETexto(esp)) {
+      return { especificacaoId: esp.id, valorMedido: null, resultadoTexto: bruto, aprovado: true };
+    }
+
+    const valor = Number(bruto);
+    if (!Number.isFinite(valor)) throw new Error(`Resultado inválido para "${esp.parametro}".`);
+    const minimo = esp.minimo !== null ? Number(esp.minimo) : -Infinity;
+    const maximo = esp.maximo !== null ? Number(esp.maximo) : Infinity;
+    return { especificacaoId: esp.id, valorMedido: valor, resultadoTexto: null, aprovado: valor >= minimo && valor <= maximo };
   });
 
-  await prisma.coaDocumento.create({
-    data: { loteId: lote.id, pdfUrl: `/coa/${lote.numeroLote.toLowerCase()}.pdf` },
-  });
+  const clienteId = clienteIdInformado ?? lote.ordemProducao?.pedidoVenda?.clienteId ?? null;
 
-  await prisma.auditLog.create({
-    data: { usuarioId: user.id, entidade: "Lote", entidadeId: lote.id, acao: "emitiu laudo (COA) de" },
+  await prisma.$transaction(async (tx) => {
+    for (const a of analises) {
+      await tx.analiseLote.create({
+        data: {
+          loteId: lote.id,
+          especificacaoId: a.especificacaoId,
+          valorMedido: a.valorMedido,
+          resultadoTexto: a.resultadoTexto,
+          aprovado: a.aprovado,
+          analistaId: user.id,
+        },
+      });
+    }
+
+    await tx.coaDocumento.create({
+      data: { loteId: lote.id, clienteId, emitidoPorId: user.id, pdfUrl: `/laudo/${lote.id}` },
+    });
+
+    await tx.auditLog.create({
+      data: { usuarioId: user.id, entidade: "Lote", entidadeId: lote.id, acao: "emitiu laudo (COA) de" },
+    });
   });
 
   revalidatePath("/qualidade");
@@ -1002,6 +1037,11 @@ export async function criarCliente(formData: FormData) {
       cnpjCpf,
       segmento,
       condicoesComerciais: (formData.get("condicoesComerciais") as string) || null,
+      endereco: (formData.get("endereco") as string) || null,
+      bairro: (formData.get("bairro") as string) || null,
+      cidade: (formData.get("cidade") as string) || null,
+      uf: (formData.get("uf") as string) || null,
+      cep: (formData.get("cep") as string) || null,
       vendedorId,
       tecnicoId,
       createdById: user.id,
@@ -1035,6 +1075,11 @@ export async function atualizarCliente(formData: FormData) {
       cnpjCpf,
       segmento,
       condicoesComerciais: (formData.get("condicoesComerciais") as string) || null,
+      endereco: (formData.get("endereco") as string) || null,
+      bairro: (formData.get("bairro") as string) || null,
+      cidade: (formData.get("cidade") as string) || null,
+      uf: (formData.get("uf") as string) || null,
+      cep: (formData.get("cep") as string) || null,
       vendedorId,
       tecnicoId,
       ativo: formData.get("ativo") === "on",
