@@ -559,8 +559,11 @@ export async function emitirLaudo(formData: FormData) {
   });
 
   const clienteId = clienteIdInformado ?? lote.ordemProducao?.pedidoVenda?.clienteId ?? null;
+  const embalagem = (formData.get("embalagem") as string | null)?.trim() || null;
 
   await prisma.$transaction(async (tx) => {
+    await tx.lote.update({ where: { id: lote.id }, data: { embalagem } });
+
     for (const a of analises) {
       await tx.analiseLote.create({
         data: {

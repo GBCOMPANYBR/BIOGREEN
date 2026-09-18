@@ -79,20 +79,27 @@ export default async function QualidadePage() {
                         >
                           <input type="hidden" name="loteId" value={l.id} />
 
-                          <div className="flex flex-col gap-1.5 sm:max-w-xs">
-                            <Label className="text-xs">Cliente (aparece no laudo)</Label>
-                            <select
-                              name="clienteId"
-                              defaultValue={clienteDerivado ?? ""}
-                              className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
-                            >
-                              <option value="">— sem cliente definido —</option>
-                              {clientes.map((c) => (
-                                <option key={c.id} value={c.id}>
-                                  {c.razaoSocial}
-                                </option>
-                              ))}
-                            </select>
+                          <div className="flex flex-wrap gap-4">
+                            <div className="flex flex-col gap-1.5 sm:max-w-xs">
+                              <Label className="text-xs">Cliente (aparece no laudo)</Label>
+                              <select
+                                name="clienteId"
+                                defaultValue={clienteDerivado ?? ""}
+                                className="flex h-9 w-full rounded-md border border-input bg-background px-2 text-sm"
+                              >
+                                <option value="">— sem cliente definido —</option>
+                                {clientes.map((c) => (
+                                  <option key={c.id} value={c.id}>
+                                    {c.razaoSocial}
+                                  </option>
+                                ))}
+                              </select>
+                            </div>
+
+                            <div className="flex flex-col gap-1.5 sm:max-w-xs">
+                              <Label className="text-xs">Embalagem (aparece no laudo)</Label>
+                              <Input name="embalagem" className="h-9" placeholder="Ex.: Container, Tambor 200L" />
+                            </div>
                           </div>
 
                           <div className="overflow-x-auto">

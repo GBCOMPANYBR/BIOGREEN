@@ -66,7 +66,7 @@ export default async function LaudoPage({ params }: { params: Promise<{ loteId: 
           <div className="bg-foreground/10 px-2 py-1 text-xs font-bold uppercase">Identificação do produto</div>
           <div className="grid grid-cols-2">
             <Campo label="Emissão" value={formatDate(coa.geradoEm)} />
-            <Campo label="Embalagem" value="—" />
+            <Campo label="Embalagem" value={lote.embalagem ?? "—"} />
           </div>
           <div className="grid grid-cols-2">
             <Campo label="Nome do produto" value={lote.produto.nomeComercial} />

@@ -746,6 +746,8 @@ model Lote {
   quantidade       Decimal   @db.Decimal(18, 3)
   dataFabricacao   DateTime?
   dataValidade     DateTime?
+  /// Preenchido pelo laboratório ao emitir o laudo (ex.: "Container", "Tambor 200L") — aparece no COA.
+  embalagem        String?
   createdAt        DateTime  @default(now())
 
   pedidoVendaItens  PedidoVendaItem[]
